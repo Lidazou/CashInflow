@@ -92,19 +92,23 @@ describe('dates: local calendar dates', () => {
   })
 
   it('formats dates in each supported display format', () => {
-    expect(formatDate('2026-09-26', 'DD MMM YYYY')).toBe('26 Sep 2026')
+    // Month and weekday names are Chinese constants rather than Intl output, so
+    // the result is identical on every machine regardless of installed ICU data.
+    expect(formatDate('2026-09-26', 'DD MMM YYYY')).toBe('26 9月 2026')
     expect(formatDate('2026-09-26', 'DD/MM/YYYY')).toBe('26/09/2026')
     expect(formatDate('2026-09-26', 'MM/DD/YYYY')).toBe('09/26/2026')
     expect(formatDate('2026-09-26', 'YYYY-MM-DD')).toBe('2026-09-26')
-    expect(formatDate('2026-09-26', 'DD MMM YYYY', { weekday: true })).toBe('Sat, 26 Sep 2026')
+    expect(formatDate('2026-09-26', 'DD MMM YYYY', { weekday: true })).toBe('周六, 26 9月 2026')
   })
 
   it('labels months and relative days for the UI', () => {
-    expect(formatMonthLabel('2026-09')).toBe('September 2026')
+    expect(formatMonthLabel('2026-09')).toBe('2026年9月')
+    expect(formatMonthLabel('2026-10')).toBe('2026年10月')
     expect(relativeDayLabel('2026-09-26', '2026-09-26')).toBe('Today')
     expect(relativeDayLabel('2026-09-25', '2026-09-26')).toBe('Yesterday')
     expect(relativeDayLabel('2026-09-23', '2026-09-26')).toBe('3 days ago')
-    expect(relativeDayLabel('2026-09-01', '2026-09-26')).toBe('Tue, 1 Sep')
+    // 1 Sep 2026 is a Tuesday.
+    expect(relativeDayLabel('2026-09-01', '2026-09-26')).toBe('周二, 1 9月')
   })
 
   it('returns a valid today string', () => {

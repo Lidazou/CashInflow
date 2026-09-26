@@ -49,13 +49,13 @@ export function TransactionDetailDialog(): React.JSX.Element | null {
     // it, because the consequence is larger than removing the row on screen.
     const confirmed = window.confirm(
       isTransfer
-        ? 'Delete this transfer? Both accounts will be updated and the money will no longer be recorded as moved.'
-        : 'Delete this transaction? This cannot be undone.'
+        ? '删除这笔转账？两个账户都会被更新，这笔资金将不再被记录为已转移。'
+        : '删除这笔交易？此操作无法撤销。'
     )
     if (!confirmed) return
 
     const result = await run(() => window.api.transactionsDelete(transaction.id), {
-      successMessage: isTransfer ? 'Transfer deleted.' : 'Transaction deleted.'
+      successMessage: isTransfer ? '转账已删除。' : '交易已删除。'
     })
 
     if (result !== null) {
@@ -75,9 +75,9 @@ export function TransactionDetailDialog(): React.JSX.Element | null {
       <div className="dt-dialog" role="dialog" aria-modal="true" aria-labelledby="dt-title">
         <header className="dt-head">
           <h2 id="dt-title" className="dt-title">
-            Transaction details
+            交易详情
           </h2>
-          <button type="button" className="btn btn-ghost btn-icon" onClick={hide} aria-label="Close details">
+          <button type="button" className="btn btn-ghost btn-icon" onClick={hide} aria-label="关闭详情">
             <Icon name="close" />
           </button>
         </header>
@@ -103,7 +103,7 @@ export function TransactionDetailDialog(): React.JSX.Element | null {
           </span>
           <div className="dt-hero__body">
             <p className="dt-hero__merchant">
-              {transaction.merchant ?? transaction.categoryName ?? (isTransfer ? 'Transfer' : 'Transaction')}
+              {transaction.merchant ?? transaction.categoryName ?? (isTransfer ? '转账' : '交易')}
             </p>
             <p
               className={`dt-hero__amount amount ${
@@ -115,26 +115,26 @@ export function TransactionDetailDialog(): React.JSX.Element | null {
             </p>
           </div>
           <span className={`badge ${isTransfer ? 'badge-neutral' : isIncome ? 'badge-income' : 'badge-expense'}`}>
-            {isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense'}
+            {isTransfer ? '转账' : isIncome ? '收入' : '支出'}
           </span>
         </div>
 
         <dl className="dt-rows">
-          <DetailRow label="Date" value={formatDate(transaction.date, dateFormat, { weekday: true })} />
-          {transaction.time ? <DetailRow label="Time" value={transaction.time} /> : null}
-          <DetailRow label={isTransfer ? 'From account' : 'Account'} value={transaction.accountName} />
+          <DetailRow label="日期" value={formatDate(transaction.date, dateFormat, { weekday: true })} />
+          {transaction.time ? <DetailRow label="时间" value={transaction.time} /> : null}
+          <DetailRow label={isTransfer ? '转出账户' : '账户'} value={transaction.accountName} />
           {isTransfer ? (
-            <DetailRow label="To account" value={transaction.counterpartAccountName ?? 'Unknown account'} />
+            <DetailRow label="转入账户" value={transaction.counterpartAccountName ?? 'Unknown account'} />
           ) : (
-            <DetailRow label="Category" value={transaction.categoryName ?? 'Uncategorised'} />
+            <DetailRow label="分类" value={transaction.categoryName ?? 'Uncategorised'} />
           )}
-          {transaction.merchant ? <DetailRow label="Merchant" value={transaction.merchant} /> : null}
-          {transaction.note ? <DetailRow label="Note" value={transaction.note} /> : null}
+          {transaction.merchant ? <DetailRow label="商家" value={transaction.merchant} /> : null}
+          {transaction.note ? <DetailRow label="备注" value={transaction.note} /> : null}
           {isTransfer ? (
-            <DetailRow label="Other leg" value={transaction.counterpartAccountName ?? '—'} />
+            <DetailRow label="对应账户" value={transaction.counterpartAccountName ?? '—'} />
           ) : null}
           <DetailRow
-            label="Recorded"
+            label="记录时间"
             value={new Date(transaction.createdAt).toLocaleString(undefined, {
               dateStyle: 'medium',
               timeStyle: 'short'
@@ -142,7 +142,7 @@ export function TransactionDetailDialog(): React.JSX.Element | null {
           />
           {transaction.updatedAt !== transaction.createdAt ? (
             <DetailRow
-              label="Last edited"
+              label="最后修改"
               value={new Date(transaction.updatedAt).toLocaleString(undefined, {
                 dateStyle: 'medium',
                 timeStyle: 'short'
@@ -155,8 +155,8 @@ export function TransactionDetailDialog(): React.JSX.Element | null {
           <p className="dt-note">
             <Icon name="info" size={16} />
             <span>
-              This transfer is recorded against both accounts. It changes each balance but is never counted as income
-              or expense, so your monthly totals are unaffected.
+              这笔转账同时记入两个账户，会改变各自余额，但不会计入收入或支出，
+              因此不影响你的周期收支统计。
             </span>
           </p>
         ) : null}
@@ -164,11 +164,11 @@ export function TransactionDetailDialog(): React.JSX.Element | null {
         <footer className="dt-foot">
           <button type="button" className="btn btn-danger" onClick={() => void handleDelete()} disabled={pending}>
             <Icon name="trash" size={16} />
-            Delete
+            删除
           </button>
           <div className="spacer" />
           <button type="button" className="btn btn-secondary" onClick={hide} disabled={pending}>
-            Close
+            关闭
           </button>
           <button
             type="button"
@@ -184,7 +184,7 @@ export function TransactionDetailDialog(): React.JSX.Element | null {
             }}
           >
             <Icon name="edit" size={16} />
-            Edit
+            编辑
           </button>
         </footer>
       </div>

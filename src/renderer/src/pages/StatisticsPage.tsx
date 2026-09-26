@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { DonutChart, HorizontalBarChart, LineChart } from '@renderer/components/charts'
+import { categoryLabel } from '@shared/lib/i18n'
 import { Icon, iconNameOr } from '@renderer/components/Icon'
 import { useAsync } from '@renderer/hooks/useData'
 import { useDisplaySettings } from '@renderer/store/app'
@@ -57,11 +58,26 @@ import type {
  */
 
 const GRANULARITIES: ReadonlyArray<{ value: StatisticsGranularity; label: string }> = [
-  { value: 'day', label: 'Day' },
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
-  { value: 'year', label: 'Year' }
+  { value: 'day', label: '日' },
+  { value: 'week', label: '周' },
+  { value: 'month', label: '月' },
+  { value: 'year', label: '年' }
 ]
+
+/** Chart caption wording for the selected granularity, e.g. "按日汇总的支出". */
+function granularityLabel(granularity: StatisticsGranularity): string {
+  switch (granularity) {
+    case 'day':
+      return '日'
+    case 'week':
+      return '周'
+    case 'year':
+      return '年'
+    case 'month':
+    default:
+      return '月'
+  }
+}
 
 /** Six rows of seven: a month view never reflows as the user pages through it. */
 const CALENDAR_CELLS = 42
@@ -232,11 +248,11 @@ export default function StatisticsPage(): React.JSX.Element {
     <div className="stp">
       <header className="stp__head">
         <div>
-          <h1 className="stp__title">Statistics</h1>
-          <p className="muted stp__sub">Where your money came from and where it went.</p>
+          <h1 className="stp__title">统计分析</h1>
+          <p className="muted stp__sub">看看你的钱从哪来、花到哪去。</p>
         </div>
 
-        <div className="stp__tabs" role="tablist" aria-label="Reporting period">
+        <div className="stp__tabs" role="tablist" aria-label="统计周期">
           {GRANULARITIES.map((option) => (
             <button
               key={option.value}
@@ -278,13 +294,13 @@ export default function StatisticsPage(): React.JSX.Element {
             aria-busy={isUpdating}
           >
             {/* ---- period header ------------------------------------------ */}
-            <section className="card stp__period" aria-label="Period summary">
+            <section className="card stp__period" aria-label="周期概览">
               <div className="stp__periodTop">
                 <div className="stp__periodNav">
                   <button
                     type="button"
                     className="btn btn-ghost btn-icon"
-                    aria-label="Previous period"
+                    aria-label="上一个周期"
                     onClick={() => movePeriod(-1)}
                   >
                     <Icon name="chevron-left" />
@@ -293,29 +309,28 @@ export default function StatisticsPage(): React.JSX.Element {
                   <button
                     type="button"
                     className="btn btn-ghost btn-icon"
-                    aria-label="Next period"
+                    aria-label="下一个周期"
                     onClick={() => movePeriod(1)}
                   >
                     <Icon name="chevron-right" />
                   </button>
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAnchor(today())}>
-                    Today
+                    今天
                   </button>
                 </div>
 
                 <p className="muted stp__periodRange">
                   {formatDate(result.from, dateFormat)} – {formatDate(result.to, dateFormat)} ·{' '}
-                  {result.totals.transactionCount} transaction
-                  {result.totals.transactionCount === 1 ? '' : 's'}
-                  {isUpdating ? ' · updating…' : ''}
+                  {result.totals.transactionCount} 笔
+                  {isUpdating ? ' · 更新中…' : ''}
                 </p>
               </div>
 
               <div className="stp__figures">
-                <Figure label="Income" value={formatMoney(result.totals.income, reportCurrency)} tone="income" />
-                <Figure label="Expense" value={formatMoney(result.totals.expense, reportCurrency)} tone="expense" />
+                <Figure label="收入" value={formatMoney(result.totals.income, reportCurrency)} tone="income" />
+                <Figure label="支出" value={formatMoney(result.totals.expense, reportCurrency)} tone="expense" />
                 <Figure
-                  label="Net"
+                  label="结余"
                   value={formatMoney(result.totals.net, reportCurrency, { signed: true })}
                   tone={result.totals.net >= 0 ? 'income' : 'expense'}
                 />
@@ -326,11 +341,11 @@ export default function StatisticsPage(): React.JSX.Element {
               <div className="card stp__staleNote" role="alert">
                 <Icon name="alert" size={16} />
                 <span>
-                  {error} The figures above could not be refreshed, so the last loaded period is still shown.
+                  {error} 上方数据未能刷新，当前显示的是上次成功加载的周期。
                 </span>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={reload}>
                   <Icon name="refresh" size={14} />
-                  Try again
+                  重试
                 </button>
               </div>
             ) : null}
@@ -338,10 +353,10 @@ export default function StatisticsPage(): React.JSX.Element {
             {/* ---- charts: exactly two ------------------------------------ */}
             {hasData ? (
               <div className="stp__charts">
-                <section className="card stp__chartCard" aria-label="Expense trend">
+                <section className="card stp__chartCard" aria-label="支出趋势">
                   <div className="stp__chartHead">
-                    <h2 className="card-title">Expense Trend</h2>
-                    <span className="stp__caption">Expense per {granularity} bucket</span>
+                    <h2 className="card-title">支出趋势</h2>
+                    <span className="stp__caption">按{granularityLabel(granularity)}汇总的支出</span>
                   </div>
                   <LineChart
                     points={result.trend.map((point) => ({ label: point.label, value: point.expense }))}
@@ -351,22 +366,22 @@ export default function StatisticsPage(): React.JSX.Element {
                   />
                 </section>
 
-                <section className="card stp__chartCard" aria-label="Category breakdown">
+                <section className="card stp__chartCard" aria-label="分类构成">
                   <div className="stp__chartHead">
-                    <h2 className="card-title">Category Breakdown</h2>
+                    <h2 className="card-title">分类构成</h2>
                     <span className="stp__caption">
-                      {result.categories.length} categor{result.categories.length === 1 ? 'y' : 'ies'}
+                      {result.categories.length} 个分类
                     </span>
                   </div>
 
                   {result.categories.length === 0 ? (
-                    <p className="muted stp__caption">No expenses were recorded in this period.</p>
+                    <p className="muted stp__caption">这个周期还没有支出记录。</p>
                   ) : (
                     <div className="stp__catSplit">
                       <div className="stp__donut">
                         <DonutChart
                           segments={result.categories.map((row, index) => ({
-                            label: row.categoryName,
+                            label: categoryLabel(row.categoryName),
                             value: row.total,
                             color: categoryColorOf(row, index)
                           }))}
@@ -375,7 +390,7 @@ export default function StatisticsPage(): React.JSX.Element {
                           centerLabel={formatMoney(result.totals.expense, reportCurrency, {
                             compact: result.totals.expense >= 100_000
                           })}
-                          centerSubLabel="Total spent"
+                          centerSubLabel="支出合计"
                           currency={reportCurrency}
                         />
                       </div>
@@ -383,7 +398,7 @@ export default function StatisticsPage(): React.JSX.Element {
                       <div className="stp__cats">
                         <HorizontalBarChart
                           rows={result.categories.map((row, index) => ({
-                            label: row.categoryName,
+                            label: categoryLabel(row.categoryName),
                             value: row.total,
                             color: categoryColorOf(row, index),
                             meta: `${shareLabel(row.share)} · ${row.transactionCount} txn`
@@ -399,24 +414,24 @@ export default function StatisticsPage(): React.JSX.Element {
               /* spec §36 — an honest empty state, never an axis-only chart */
               <div className="card empty-state">
                 <Icon name="statistics" size={28} />
-                <p className="empty-state-title">No financial data yet.</p>
-                <p className="muted">Add a few transactions to see your financial overview.</p>
+                <p className="empty-state-title">暂无财务数据。</p>
+                <p className="muted">先记录几笔交易，就能看到你的收支概览。</p>
                 <button type="button" className="btn btn-primary" onClick={() => openCreateTransaction()}>
                   <Icon name="plus" size={16} />
-                  Add transaction
+                  记一笔
                 </button>
               </div>
             )}
           </div>
 
           {/* ---- calendar (spec §18) -------------------------------------- */}
-          <section className="card stp__calendar" aria-label="Calendar">
+          <section className="card stp__calendar" aria-label="日历">
             <div className="stp__calHead">
               <div className="stp__calNav">
                 <button
                   type="button"
                   className="btn btn-ghost btn-icon"
-                  aria-label="Previous month"
+                  aria-label="上个月"
                   onClick={() => moveCalendarMonth(-1)}
                 >
                   <Icon name="chevron-left" />
@@ -425,7 +440,7 @@ export default function StatisticsPage(): React.JSX.Element {
                 <button
                   type="button"
                   className="btn btn-ghost btn-icon"
-                  aria-label="Next month"
+                  aria-label="下个月"
                   onClick={() => moveCalendarMonth(1)}
                 >
                   <Icon name="chevron-right" />
@@ -434,9 +449,7 @@ export default function StatisticsPage(): React.JSX.Element {
 
               <p className="muted stp__caption">
                 {calendarForMonth
-                  ? `${calendarForMonth.totals.transactionCount} transaction${
-                      calendarForMonth.totals.transactionCount === 1 ? '' : 's'
-                    } · ${formatMoney(calendarForMonth.totals.expense, reportCurrency)} spent`
+                  ? `${calendarForMonth.totals.transactionCount} 笔 · 支出 ${formatMoney(calendarForMonth.totals.expense, reportCurrency)}`
                   : 'Daily activity for the month'}
               </p>
             </div>
@@ -446,7 +459,7 @@ export default function StatisticsPage(): React.JSX.Element {
                 <span className="muted">{calendarError}</span>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={reloadCalendar}>
                   <Icon name="refresh" size={14} />
-                  Try again
+                  重试
                 </button>
               </div>
             ) : calendarLoading && calendarForMonth === null ? (
@@ -513,17 +526,17 @@ export default function StatisticsPage(): React.JSX.Element {
                       −{formatMoney(selectedDayTotals?.expense ?? 0, reportCurrency)}
                     </span>
                     <span className={`amount ${(selectedDayTotals?.net ?? 0) >= 0 ? 'text-income' : 'text-expense'}`}>
-                      Net {formatMoney(selectedDayTotals?.net ?? 0, reportCurrency, { signed: true })}
+                      结余 {formatMoney(selectedDayTotals?.net ?? 0, reportCurrency, { signed: true })}
                     </span>
                   </div>
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
                     onClick={() => setSelectedDate(null)}
-                    aria-label="Close day details"
+                    aria-label="关闭当日详情"
                   >
                     <Icon name="close" size={14} />
-                    Close
+                    关闭
                   </button>
                 </div>
 
@@ -532,7 +545,7 @@ export default function StatisticsPage(): React.JSX.Element {
                     <span className="muted">{dayTransactionsError}</span>
                     <button type="button" className="btn btn-secondary btn-sm" onClick={reloadDayTransactions}>
                       <Icon name="refresh" size={14} />
-                      Try again
+                      重试
                     </button>
                   </div>
                 ) : dayTransactionsLoading && dayTransactions.length === 0 ? (
@@ -542,7 +555,7 @@ export default function StatisticsPage(): React.JSX.Element {
                     ))}
                   </div>
                 ) : dayTransactions.length === 0 ? (
-                  <p className="muted stp__caption">No transactions were recorded on this day.</p>
+                  <p className="muted stp__caption">这一天还没有交易记录。</p>
                 ) : (
                   <ul className="stp__txList">
                     {dayTransactions.map((transaction) => (
@@ -559,8 +572,7 @@ export default function StatisticsPage(): React.JSX.Element {
 
                 {dayTransactionsTotal > dayTransactions.length ? (
                   <p className="muted stp__caption">
-                    Showing the {dayTransactions.length} largest of {dayTransactionsTotal} transactions recorded on
-                    this day.
+                    仅显示当天金额最大的 {dayTransactions.length} 笔，共 {dayTransactionsTotal} 笔。
                   </p>
                 ) : null}
               </div>
@@ -613,7 +625,7 @@ function ErrorPanel({
       <p className="muted">{detail}</p>
       <button type="button" className="btn btn-secondary" onClick={onRetry}>
         <Icon name="refresh" size={16} />
-        Try again
+        重试
       </button>
     </div>
   )
@@ -656,10 +668,12 @@ function DayTransactionRow({
   const isTransfer = transaction.type === 'transfer'
   const isIncome = transaction.type === 'income'
   const title =
-    transaction.merchant ?? transaction.categoryName ?? (isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense')
+    transaction.merchant ?? categoryLabel(transaction.categoryName) ?? (isTransfer ? '转账' : isIncome ? '收入' : '支出')
   const meta = isTransfer
     ? `${transaction.accountName} → ${transaction.counterpartAccountName ?? 'another account'}`
-    : [transaction.categoryName, transaction.accountName, transaction.time].filter(Boolean).join(' · ')
+    : [transaction.categoryName ? categoryLabel(transaction.categoryName) : null, transaction.accountName, transaction.time]
+        .filter(Boolean)
+        .join(' · ')
 
   return (
     <li className="stp__txRow">
@@ -733,13 +747,13 @@ function dayCellLabel(
 ): string {
   const parts = [formatDate(date, dateFormat, { weekday: true })]
   if (!day || day.transactionCount === 0) {
-    parts.push('no transactions')
+    parts.push('无交易')
   } else {
     parts.push(`income ${formatMoney(day.income, currency)}`)
     parts.push(`expense ${formatMoney(day.expense, currency)}`)
     parts.push(`${day.transactionCount} transaction${day.transactionCount === 1 ? '' : 's'}`)
   }
-  if (outsideMonth) parts.push('outside this month')
+  if (outsideMonth) parts.push('不在本月')
   return parts.join(', ')
 }
 

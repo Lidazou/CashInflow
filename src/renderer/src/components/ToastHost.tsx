@@ -108,7 +108,7 @@ export function ToastHost(): JSX.Element | null {
               className="btn btn-ghost btn-icon btn-sm sw-toast__dismiss"
               onClick={() => dismissToast(toast.id)}
               aria-label={`Dismiss notification: ${toast.message}`}
-              title="Dismiss"
+              title="关闭"
             >
               <Icon name="close" size={14} />
             </button>

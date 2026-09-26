@@ -169,14 +169,14 @@ export default function ImportPage(): React.JSX.Element {
   return (
     <div className="imp">
       <header className="imp__head">
-        <h1 className="imp__title">Import transactions</h1>
+        <h1 className="imp__title">导入账单</h1>
         <p className="muted">
-          Bring in a statement you exported from your bank, WeChat Pay or Alipay. Nothing is saved until you confirm.
+          导入你从银行、微信支付或支付宝导出的账单。在你确认之前不会保存任何数据。
         </p>
       </header>
 
       {/* --- step indicator ---------------------------------------------- */}
-      <ol className="imp__steps" aria-label="Import progress">
+      <ol className="imp__steps" aria-label="导入进度">
         {(['Select file', 'Parse', 'Preview', 'Check duplicates', 'Confirm'] as const).map((label, index) => {
           const activeIndex = step === 'select' ? (filePath ? 1 : 0) : step === 'preview' ? 2 : 4
           const state = index < activeIndex ? 'done' : index === activeIndex ? 'current' : 'todo'
@@ -214,17 +214,17 @@ export default function ImportPage(): React.JSX.Element {
           <div className="imp__pick">
             <button type="button" className="btn btn-primary" onClick={() => void handlePickFile()}>
               <Icon name="import" size={16} />
-              Select file…
+              选择文件…
             </button>
-            {filePath ? <span className="muted truncate">{filePath}</span> : <span className="muted">CSV or XLSX</span>}
+            {filePath ? <span className="muted truncate">{filePath}</span> : <span className="muted">CSV 或 XLSX</span>}
           </div>
 
           <p className="imp__hint">
             <Icon name="info" size={16} />
             <span>
               CashInflow cannot connect to your bank, WeChat or Alipay directly. Export a statement from the app or
-              website first, then import the file here. Header rows are located automatically, so a preamble or a
-              summary footer will not confuse the importer.
+              网站先导出账单，再把文件导入到这里。表头行会自动识别，所以前面的说明文字或
+              末尾的汇总行都不会影响导入。
             </span>
           </p>
 
@@ -274,7 +274,7 @@ export default function ImportPage(): React.JSX.Element {
           <div className="card imp__options">
             <div className="imp__option">
               <label className="field-label" htmlFor="imp-account">
-                Account for rows without one
+                没有账户的行归入
               </label>
               <select
                 id="imp-account"
@@ -282,7 +282,7 @@ export default function ImportPage(): React.JSX.Element {
                 value={defaultAccountId ?? ''}
                 onChange={(event) => setDefaultAccountId(event.target.value ? Number(event.target.value) : null)}
               >
-                <option value="">Use the account named in the file, or ask</option>
+                <option value="">使用文件中标注的账户，或另外指定</option>
                 {(accounts ?? []).map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name} ({account.currency})
@@ -290,8 +290,8 @@ export default function ImportPage(): React.JSX.Element {
                 ))}
               </select>
               <p className="field-hint">
-                Statements usually name the account. If a row has none and no default is chosen, the import will stop
-                and tell you which row was a problem.
+                账单通常会标明账户。如果某一行没有账户且你也没有指定默认账户，导入会中
+                断并告诉你具体是哪一行有问题。
               </p>
             </div>
 
@@ -302,7 +302,7 @@ export default function ImportPage(): React.JSX.Element {
                 onChange={(event) => setCreateMissingCategories(event.target.checked)}
               />
               <span>
-                Create categories that do not exist yet
+                自动创建尚不存在的分类
                 <span className="muted"> — rows keep their original category names.</span>
               </span>
             </label>
@@ -311,10 +311,10 @@ export default function ImportPage(): React.JSX.Element {
           {/* --- batch actions ------------------------------------------- */}
           <div className="imp__actions">
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAllResolution('import')}>
-              Select all
+              全选
             </button>
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAllResolution('skip')}>
-              Deselect all
+              取消全选
             </button>
             {preview.duplicateCount > 0 ? (
               <button
@@ -322,12 +322,12 @@ export default function ImportPage(): React.JSX.Element {
                 className="btn btn-secondary btn-sm"
                 onClick={() => setAllResolution('skip', true)}
               >
-                Skip all {preview.duplicateCount} duplicate(s)
+                跳过全部 {preview.duplicateCount} 条重复
               </button>
             ) : null}
             <div className="spacer" />
             <span className="muted imp__totals">
-              Selected: <span className="text-income amount">+{formatMoney(totals.income, baseCurrency)}</span>{' '}
+              已选： <span className="text-income amount">+{formatMoney(totals.income, baseCurrency)}</span>{' '}
               <span className="text-expense amount">−{formatMoney(totals.expense, baseCurrency)}</span>
             </span>
           </div>
@@ -338,16 +338,14 @@ export default function ImportPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th scope="col" style={{ width: 44 }}>
-                    <span className="visually-hidden">Include</span>
+                    <span className="visually-hidden">是否导入</span>
                   </th>
-                  <th scope="col">Date</th>
-                  <th scope="col">Description</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">Account</th>
-                  <th scope="col" className="num">
-                    Amount
-                  </th>
-                  <th scope="col">Status</th>
+                  <th scope="col">日期</th>
+                  <th scope="col">摘要</th>
+                  <th scope="col">分类</th>
+                  <th scope="col">账户</th>
+                  <th scope="col" className="num">金额</th>
+                  <th scope="col">状态</th>
                 </tr>
               </thead>
               <tbody>
@@ -361,7 +359,7 @@ export default function ImportPage(): React.JSX.Element {
                           type="checkbox"
                           checked={row.resolution === 'import' && !hasError}
                           disabled={hasError}
-                          aria-label={`Import row ${row.index + 1}`}
+                          aria-label={`导入第 ${row.index + 1} 行`}
                           onChange={(event) =>
                             setRowResolution(row.index, event.target.checked ? 'import' : 'skip')
                           }
@@ -384,13 +382,13 @@ export default function ImportPage(): React.JSX.Element {
                         ) : isDuplicate ? (
                           <span
                             className="badge badge-neutral"
-                            title={row.duplicateOf?.reason ?? 'Possible duplicate'}
+                            title={row.duplicateOf?.reason ?? '可能重复'}
                           >
                             {row.duplicateOf?.confidence === 1 ? 'Duplicate' : 'Possible duplicate'}
                           </span>
                         ) : row.warnings.length > 0 ? (
                           <span className="badge badge-neutral" title={row.warnings.join(' ')}>
-                            Check
+                            请核对
                           </span>
                         ) : (
                           <span className="badge badge-income">OK</span>
@@ -406,15 +404,15 @@ export default function ImportPage(): React.JSX.Element {
           <p className="imp__hint">
             <Icon name="shield" size={16} />
             <span>
-              Duplicates are matched on the provider&rsquo;s transaction id when the file has one, and otherwise on the
-              date, amount and description. Rows flagged as duplicates are unticked but you can still include them — a
-              genuine second coffee on the same day is not an error.
+              重复检测优先使用账单里的交易单号；没有单号时，则根据日期、金额和
+              摘要来判断。被标记为重复的行默认不勾选，但你仍可以手动勾选导入——
+              同一天真的喝了两杯咖啡并不是错误。
             </span>
           </p>
 
           <div className="imp__footer">
             <button type="button" className="btn btn-secondary" onClick={reset} disabled={pending}>
-              Cancel
+              取消
             </button>
             <button
               type="button"
@@ -434,7 +432,7 @@ export default function ImportPage(): React.JSX.Element {
           <div className="imp__doneIcon">
             <Icon name="check" size={22} />
           </div>
-          <h2 className="imp__doneTitle">Import complete</h2>
+          <h2 className="imp__doneTitle">导入完成</h2>
           <p className="muted">
             {result.imported} transaction(s) added
             {result.skipped > 0 ? `, ${result.skipped} skipped` : ''}.
@@ -446,11 +444,11 @@ export default function ImportPage(): React.JSX.Element {
           ) : null}
           <p className="muted">
             This import is recorded in Import history in Settings, where you can roll the whole batch back if it was
-            not what you intended.
+            不是你想要的。
           </p>
           <div className="row" style={{ marginTop: 'var(--space-4)' }}>
             <button type="button" className="btn btn-primary" onClick={reset}>
-              Import another file
+              继续导入其他文件
             </button>
           </div>
         </div>

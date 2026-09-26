@@ -10,9 +10,16 @@ release/
 # Local npm cache (kept inside the workspace by .npmrc)
 .npm-cache/
 
-# Verification artefacts
+# Screenshot harness.
+#
+# Used to regenerate docs/images/*.png from a running app. Kept out of the
+# repository because it is a one-off maintenance tool, not part of the product or
+# its build.
+tools/
+
+# Ad-hoc verification artefacts
 shot-*.png
-probe-cdp.cjs
+probe-*.cjs
 
 # Logs
 *.log
@@ -25,8 +32,8 @@ npm-debug.log*
 Thumbs.db
 
 # Local databases — a user's financial data must never be committed.
-# The real database lives in %APPDATA%\SpendWise, but a stray copy here
-# (from a test or a manual experiment) would be a serious leak.
+# The real database lives in %APPDATA%\CashInflow; a stray copy here (from a test
+# or a manual experiment) would be a serious leak.
 *.db
 *.db-wal
 *.db-shm

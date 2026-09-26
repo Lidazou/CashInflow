@@ -104,6 +104,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updated = await window.api.settingsUpdate(patch)
     set({ settings: updated })
 
+    // APPLY THE THEME HERE, not only in App.tsx's effect.
+    //
+    // Relying on the React effect alone meant that a theme written through this
+    // action from anywhere except the header toggle — the Settings page, or any
+    // future caller — was persisted but never painted: the stored value said
+    // "dark" while the document stayed light until the next reload. Doing it here
+    // makes the action self-contained, and the effect in App.tsx still covers the
+    // initial load and OS-preference changes.
+    if (patch.theme !== undefined) {
+      applyTheme(updated.theme)
+    }
+
     // Keep the renderer's display currency in step with the persisted setting,
     // so switching currency in Settings and switching it from the dashboard
     // behave identically.

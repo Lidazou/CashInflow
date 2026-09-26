@@ -1,488 +1,415 @@
 # CashInflow
 
-A local-first personal finance manager for Windows, built for **Chinese students
-studying abroad**.
+**给中国留学生的本地记账本** · 多币种 · 实时汇率 · 按生活费周期结算
 
-Records income and expenses across accounts in several currencies, shows what you
-have right now, and reports spending over the period your money actually arrives
-in. Everything is stored in a SQLite database on your own machine. There is no
-account to create, no server, and no network access beyond a single exchange-rate
-lookup — the app is fully usable offline.
+<p>
+  <img alt="Electron" src="https://img.shields.io/badge/Electron-44-2B2E3A?logo=electron&logoColor=white">
+  <img alt="React" src="https://img.shields.io/badge/React-19-087EA4?logo=react&logoColor=white">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
+  <img alt="SQLite" src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-204%20passing-16A34A">
+  <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white">
+</p>
 
-> **The one-sentence goal:** open the app and immediately know how much money you
-> have, what you earned this period, what you spent, what is left, what you spent
-> today, and what your largest expense was — in whichever currency you are
-> thinking in today.
-
----
-
-## 功能一览 (What it does)
-
-**总览 Dashboard** — a three-column home screen: a large 3D donut breaking down
-the period's spending by category with the remaining figure in the centre,
-today's transactions, and the five largest expenses with a link to the full
-ranking. A currency switcher and a live exchange-rate ticker sit at the top.
-
-**多币种 Multi-currency** — hold accounts in CNY, MYR, SGD, USD, HKD and more.
-Switch the display currency at any time and every figure re-converts instantly.
-Stored amounts are never modified by a currency switch; only the presentation
-changes.
-
-**结算周期 Settlement cycles** — if your allowance arrives on the 5th, set the
-cycle to start on the 5th and "this period" means 5 Aug – 4 Sep instead of the
-calendar month. Every figure — dashboard, statistics, budget — follows.
-
-**自定义区间 Custom periods** — pick any two dates, optionally enter a total, and
-see spend against it with a pace projection. Save a period (a semester, a trip)
-to reuse it.
-
-**账户 Accounts** — cash, bank, e-wallet, credit card and other accounts, each with
-its own currency and opening balance. Balances are always derived from the ledger,
-so they cannot drift out of sync.
-
-**交易明细 Transactions** — income, expense and transfer, grouped by day with daily
-subtotals. Every row can be viewed, edited and deleted, and transfers are always
-kept consistent across both accounts.
-
-**统计分析 Statistics** — day, week, month and year views with an expense trend, a
-category breakdown, and a calendar view where any day can be opened.
-
-**预算 Budget** — an overall period budget plus per-category limits, with restrained
-over-budget warnings rather than alarm-red screens.
-
-**订阅与周期 Subscriptions** — track recurring charges and see your true estimated
-monthly cost. Recurring rules are reminders; nothing is written to the ledger
-without your confirmation.
-
-**导入账单 Import** — read a CSV or XLSX statement exported from your bank, WeChat
-Pay, Alipay, Maybank or CIMB. Flow: *select file → parse → preview → detect
-duplicates → confirm*. Nothing is written until you confirm.
-
-**搜索 Search** — search every transaction by merchant, note, category or account,
-with date, amount, type, account and category filters.
-
-**设置 Settings** — currency, date format, start of week, settlement cycle,
-exchange rates (including manual rates), light/dark/system theme, category
-management, backup and restore, CSV export, and a security panel that tells you
-exactly where your data is.
+![总览](docs/images/dashboard.png)
 
 ---
 
-## 汇率 Live exchange rates
+## 这是什么
 
-Rates come from free public providers and need **no API key**:
+一个运行在 Windows 上的个人记账软件。所有数据保存在你自己电脑的 SQLite 数据库里，
+不需要注册账号，不联网也能完整使用。
 
-| Provider | Notes |
+它和普通记账 App 的区别在三个地方。
+
+---
+
+### 1️⃣ 按你的生活费周期结算，而不是自然月
+
+**这是整个软件最核心的设计。**
+
+如果你每月 5 号收到家里打的生活费，那么「本月」对你来说其实是 **8月5日 – 9月4日**。
+
+用自然月统计会怎样？9 月 3 日打开 App，它告诉你「本月支出 ¥0」——你确实还没开始花这个月的钱。
+但真实情况是你正处在上一周期的末尾，钱快花完了。
+
+CashInflow 让你把周期起点设成任意一天（1–28 日）：
+
+```
+设置起始日 = 5
+
+  ├──────────────┤├──────────────┤├──────────────┤
+  8月5日       9月4日          10月4日
+   └── 周期 A ──┘└── 周期 B ──┘
+```
+
+首页圆环、「今天」、统计、预算全部跟着这个周期走。
+
+> **为什么最多只能设到 28 日？** 设成 31 日的话，2 月没有 31 号，周期长度会在
+> 28–31 天之间变化，同一笔交易可能落进不同周期。上限 28 保证每个周期长度
+> 都是一个月。设置界面里也写明了这一点。
+
+---
+
+### 2️⃣ 真正的多币种，切换一下所有数字立刻变
+
+人民币、马币、新币、美元、港币……同时持有多个币种账户。顶部切换显示货币，
+**首页、交易明细、统计、总账**会一起换算。
+
+```
+¥ 人民币 CNY ▾    ● 今日汇率  CNY/MYR 0.60657  CNY/USD 0.14871  CNY/SGD 0.18995
+```
+
+| 按人民币显示 | 按马币显示 |
 |---|---|
-| `open.er-api.com` | 160+ currencies, updated daily |
-| `api.exchangerate-api.com` | Same data, different host — used as a mirror when the first is unreachable |
-| `api.frankfurter.app` | ECB reference rates, served from the EU |
+| ![CNY](docs/images/dashboard.png) | ![MYR](docs/images/dashboard-myr.png) |
 
-They are tried in order, and the fallback chain is not decoration: a student in
-mainland China, a student in Kuala Lumpur and a student on a campus VPN will not
-all reach the same host.
-
-**How it behaves**
-
-- Rates are **cached in SQLite** with their fetch time and provider, so the app
-  works completely offline using the last known rates.
-- The UI reports the **age and freshness** of the rates. A finance app that shows
-  a week-old rate without saying so is worse than one that shows nothing, because
-  you will budget against a number that is quietly wrong.
-- Fetches happen in the **main process**, not the renderer. The
-  Content-Security-Policy forbids the renderer from making any outbound
-  connection — that restriction is what guarantees your financial data cannot be
-  sent anywhere — so the one permitted network call is made where it can be
-  audited.
-- **Manual rates** override the fetched table when you trust your bank's rate
-  more than a public mid-market one, and are never silently overwritten.
-- Rates are used **only to convert for display**. No converted figure is ever
-  written back into the ledger, so the books always balance in the currency the
-  money actually moved in.
-
-**What the providers do not give you**
-
-These are indicative mid-market rates, not the rate your bank will charge you.
-Card and remittance rates include a spread, so a converted figure here is a
-reference, not a quote.
+**切换货币只改变显示方式，不会修改任何一笔已记录的金额。** 账本永远以钱实际
+发生的币种记账，所以对账时你看到的永远是银行账单上的那个数字。
 
 ---
 
-## Technology stack
+### 3️⃣ 导入微信 / 支付宝 / 银行账单
 
-| Layer | Choice | Why |
-|---|---|---|
-| Shell | Electron 44 | Produces a real Windows `.exe` and installer |
-| UI | React 19 + TypeScript | Fast to build, predictable to maintain |
-| Build | electron-vite 5 + Vite 7 | Separate main/preload/renderer bundles from one config |
-| Database | SQLite via better-sqlite3 13 | A real embedded relational database, synchronous, zero configuration |
-| Charts | Hand-written SVG | No charting dependency; the app needs five chart shapes |
-| State | Zustand | Small, and only genuinely global state lives in it |
-| Spreadsheets | ExcelJS | MIT-licensed XLSX reading with real streaming |
-| Tests | Vitest | Fast, and runs the real database rather than mocks |
+不用手工录入。导出账单文件，选进来：
 
-There are exactly two runtime dependencies: `better-sqlite3` and `exceljs`.
+```
+选择文件 → 解析 → 预览 → 检测重复 → 你确认 → 写入
+```
+
+支持 **微信支付**、**支付宝**（GBK 编码 + 24 行前言）、**Maybank**、**CIMB**，
+以及任意通用 CSV / XLSX。
+
+![记一笔](docs/images/add-transaction.png)
 
 ---
 
-## Architecture
+## 功能截图
 
-The dependency direction is strictly one-way. The renderer has no Node access,
-no filesystem access and no SQL.
+### 统计分析：趋势、构成、日历
+
+日 / 周 / 月 / 年四种粒度，折线趋势 + 分类构成，下面是日历视图，点任意一天看当天明细。
+
+![统计分析](docs/images/statistics.png)
+
+### 自定义区间统计：任意时间段 + 输入总金额
+
+不一定是自然月，也不一定是生活费周期。**随便选一段时间，输入总金额，看还能撑多久。**
+
+比如「这个学期我带了 ¥5,000」：
+
+```
+区间支出 / 总金额           ¥ 4,731.29 / ¥ 5,000.00
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+剩余 ¥268.71     日均支出 ¥175.23     已过 27 / 30 天
+                                       按此速度预计 ¥5,256.90
+                                       按当前速度会超出总金额
+```
+
+重点是最后那行——**按当前速度会不会超支**，这才是「还能撑多久」的答案。
+
+![自定义区间](docs/images/custom-period.png)
+
+### 账户：多币种余额分开看
+
+不同货币的余额**不会相加**（¥5,000 和 RM5,000 不是一回事）。每个币种单独一行，
+同时给出折算值：
+
+```
+账户余额（按币种）
+CNY      ¥ 5,482.20     ≈ ¥ 5,482.20        1 个账户
+MYR     -RM 1,585.80    ≈ -¥ 2,614.35       3 个账户
+```
+
+![账户](docs/images/accounts.png)
+
+### 汇率与设置
+
+三个免费汇率源自动回退，本地缓存，离线可用，支持手动填写你银行的真实汇率。
+
+![设置](docs/images/settings.png)
+
+### 深色模式
+
+浅色是默认主题。深色模式保持同样的信息层级，不是简单地把背景刷黑。
+
+![深色模式](docs/images/dashboard-dark.png)
+
+---
+
+## 优势：数据正确性
+
+金融软件出错的代价不是「不好看」，而是**你根据错误的数字做了决定**。
+下面每条都不是泛泛的「最佳实践」，而是具体防住了某类真实的 bug。
+
+### 金额一律用整数存，不用小数
+
+```js
+// 浮点数会这样：
+0.1 + 0.2          // 0.30000000000000004
+100.1 + 200.2      // 300.29999999999995
+
+// CashInflow 存整数：
+10010 + 20020      // 30030  精确等于 ¥300.30
+```
+
+数据库里 `¥18.50` 存成 `1850`（分），`RM 18.50` 存成 `1850`（仙）。
+只在最后显示时才格式化成小数。
+
+### 跨币种聚合绝不直接相加
+
+最容易写错的代码长这样：
+
+```sql
+SELECT SUM(amount) FROM transactions WHERE date BETWEEN ? AND ?   -- ❌
+```
+
+只要你有两个币种的账户，这行代码就会把 `2800`（分）和 `1850`（仙）加起来得到 `4650`——
+**一个看起来很合理、实际毫无意义的数字**。
+
+正确做法是按币种分组、各自换算、最后合并，**全程只舍入一次**：
+
+```sql
+GROUP BY currency   -- 先分币种，组内求和是精确的
+```
+
+### 没有汇率时，绝不假装汇率是 1
+
+某个币种查不到汇率时，金额会**按原币显示并标注 `*`**，同时明确告诉你汇率缺失。
+凭空按 1:1 换算是最危险的失败方式——因为结果看起来完全正常。
+
+### 转账永远不会被算成支出
+
+转账写**两行**（`type = 'transfer'`），一出一进，用一张 `transfers` 表关联。
+所有收入/支出统计都按 `type` 过滤，转账**从结构上**就被排除了——
+不存在「某个查询忘了特殊处理」的可能。
+
+```
+Maybank → Cash RM500
+
+Maybank   -500.00    转账腿
+Cash      +500.00    转账腿
+本期支出   不变
+总余额     不变
+```
+
+### 余额永远由账本推导，不落库
+
+```
+余额 = 期初余额 + SUM(所有交易的有符号金额)
+```
+
+存一个「当前余额」字段等于维护第二份真相，某条写入路径忘了更新就会漂移。
+个人账本规模下 `SUM` 是瞬间的，所以正确性优先。
+
+### 其他不妥协的地方
+
+- **有交易的账户不能删除** → 提示改为归档，历史记录不会被顺手清掉
+- **在用的分类不能删除** → 让你选择把交易转移到哪个分类，绝不静默改成「其他」
+- **周期无缝铺满日历**（有测试直接断言）：有缝隙会漏掉交易，有重叠会重复计算
+- **重复导入不会翻倍**：微信/支付宝用交易单号做键；没有单号时用内容哈希 +
+  出现序号，**同一天真的喝了两杯咖啡两笔都能导入，重新导入同一个文件则全部识别为重复**
+- **账户币种一旦有交易就不能改**：存储的整数会被重新解释成另一种货币
+
+---
+
+## 隐私与安全
+
+| | |
+|---|---|
+| 数据位置 | `%APPDATA%\CashInflow\spendwise.db` |
+| 联网 | **仅**汇率查询。三个免费公开接口，无需 API Key |
+| 遥测 / 分析 | 无 |
+| 远程数据库 | 无 |
+| 渲染进程网络权限 | **被 CSP 完全禁止**，汇率请求统一走主进程，可审计 |
+| 数据库加密 | 无（请配合 BitLocker 等全盘加密） |
+
+架构上渲染进程**碰不到数据库、碰不到文件系统**：
 
 ```
 ┌──────────────────────────────────────────────┐
-│  Renderer  (React, sandboxed, no Node)       │
-│  pages / components / hooks                  │
+│  渲染进程 (React，无 Node 权限)               │
 └───────────────────┬──────────────────────────┘
-                    │  window.api.<method>()
-                    │  (contextBridge, allow-listed channels only)
+                    │  window.api.<方法>()  仅白名单
 ┌───────────────────▼──────────────────────────┐
-│  Preload  (the only bridge)                  │
-│  one method per channel, no raw ipcRenderer  │
+│  preload（唯一桥梁，不暴露 ipcRenderer 本身） │
 └───────────────────┬──────────────────────────┘
-                    │  ipcRenderer.invoke(channel, data only)
+                    │  只传数据，不传 SQL
 ┌───────────────────▼──────────────────────────┐
-│  Main process                                │
-│  ipc/       validation + error envelope      │
-│  services/  all business rules               │
-│  database/  connection, migrations, mappers  │
+│  主进程：校验 → 业务规则 → 参数绑定查询       │
 └───────────────────┬──────────────────────────┘
-                    │  prepared statements, bound parameters
+                    │
 ┌───────────────────▼──────────────────────────┐
-│  SQLite  (%APPDATA%\CashInflow\spendwise.db)  │
+│  SQLite（本地文件，WAL 模式）                 │
 └──────────────────────────────────────────────┘
 ```
 
-Key properties of this design:
-
-- **No SQL crosses the bridge.** The renderer sends data; the main process
-  decides what query that data becomes. There is no channel that accepts a query
-  string.
-- **Filesystem paths only enter through a native file dialog** that the user
-  drove.
-- **Failures never reject across IPC.** Every handler resolves to an envelope
-  (`{ ok: true, data }` or `{ ok: false, error }`). An unhandled rejection in the
-  renderer blanks the window, and a blank window in a finance app is
-  indistinguishable from data loss. The preload rethrows a real `Error` with the
-  original `code` and per-field messages attached.
-- **Validation happens twice** — in the form for immediate feedback, and again in
-  the main process, which is the authority.
+没有任何通道接受 SQL 字符串。商户名写成 `'; DROP TABLE transactions; --`
+也只是一个名字奇怪的商户。
 
 ---
 
-## Database structure
+## 安装使用
 
-The database is created and migrated automatically on first launch. Schema
-version is tracked with SQLite's `user_version` pragma, and every migration runs
-in a transaction. Migrations are append-only: an applied migration is never
-edited, because every existing database has already run the old version and has no
-way to re-run it.
+### 安装版
 
-Schema version 2 added the exchange-rate cache and saved custom periods.
+下载 `CashInflow-1.1.0-x64-setup.exe`，双击安装。会创建开始菜单和桌面快捷方式。
 
-### `accounts`
+### 免安装版
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | INTEGER PK | |
-| `name` | TEXT | Unique per currency |
-| `type` | TEXT | `cash` · `bank` · `wallet` · `credit_card` · `other` |
-| `currency` | TEXT | ISO code, default `MYR` |
-| `opening_balance` | INTEGER | Minor units; may be negative for a credit card |
-| `color`, `icon` | TEXT | Presentation only |
-| `archived` | INTEGER | 0/1 — archived accounts keep their history |
-| `note` | TEXT | |
-| `sort_order` | INTEGER | |
-| `created_at`, `updated_at` | TEXT | ISO-8601 UTC |
+下载 `CashInflow-1.1.0-x64-portable.exe`，直接运行，不写注册表。
 
-### `categories`
+两类安装包都在 [Releases](../../releases) 里。卸载**不会**删除你的账本数据。
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | INTEGER PK | |
-| `name` | TEXT | Unique per type |
-| `type` | TEXT | `income` · `expense` |
-| `icon`, `color` | TEXT | |
-| `is_system` | INTEGER | 1 for the seeded presets |
-| `sort_order`, `created_at` | | |
-
-Seeded expense categories: Food, Transport, Shopping, Housing, Entertainment,
-Education, Health, Travel, Bills, Subscription, Other.
-Seeded income categories: Salary, Freelance, Investment, Gift, Refund, Other.
-
-### `transactions`
-
-| Column | Type | Notes |
-|---|---|---|
-| `id` | INTEGER PK | |
-| `account_id` | INTEGER FK | `ON DELETE RESTRICT` |
-| `type` | TEXT | `income` · `expense` · `transfer` |
-| **`amount`** | **INTEGER** | **Signed minor units — the only money column** |
-| `category_id` | INTEGER FK | `NULL` for transfers |
-| `date` | TEXT | Local calendar date `YYYY-MM-DD` |
-| `time` | TEXT | `HH:MM` or NULL |
-| `merchant`, `note` | TEXT | |
-| `transfer_id` | INTEGER FK | Links a transfer's two legs |
-| `import_batch_id` | INTEGER FK | Which import created this row |
-| `source_id`, `import_hash` | TEXT | Duplicate detection |
-| `created_at`, `updated_at` | TEXT | |
-
-### `transfers`
-
-Holds the authoritative pairing of a transfer: `from_account_id`,
-`to_account_id`, `amount` (positive), `date`, `time`, `note`. Deleting this row
-cascades to both transaction legs.
-
-### Other tables
-
-- **`budgets`** — `category_id` (NULL = overall), `period`, `limit_amount`.
-- **`subscriptions`** — `name`, `amount`, `cycle`, `next_charge_date`, `active`.
-- **`recurring_rules`** — reminders only; never writes to the ledger by itself.
-- **`import_batches`** — one row per confirmed import, so a batch can be rolled back.
-- **`settings`** — key/value, so a backup carries your preferences too.
-- **`schema_migrations`** — human-readable audit trail of applied migrations.
-
-### How money is stored
-
-Every amount is an **integer count of the currency's minor unit**:
+### 第一次打开
 
 ```
-¥28.00     ->  stored as  2800   (fen)
-RM 18.50   ->  stored as  1850   (sen)
-$1,234.56  ->  stored as  123456 (cents)
+启动 → 欢迎页 → 建立第一个账户（名称、类型、币种、期初余额） → 总览
 ```
 
-This is not a stylistic choice. In IEEE-754 binary floating point:
-
-```js
-0.1 + 0.2            // 0.30000000000000004
-100.1 + 200.2        // 300.29999999999995
-```
-
-With integers, `10010 + 20020 === 30030` exactly, always. Formatting happens once,
-at the edge, in the renderer.
-
-### How conversion works
-
-Conversion is the one place the integer rule has to admit a decimal step, so the
-discipline changes rather than disappears:
-
-1. **One multiplication, one rounding.** The rate keeps its full published
-   precision, the amount is multiplied once, and the result is rounded
-   half-away-from-zero to the target currency's minor unit. ¥100 at 0.606575 is
-   exactly MYR 60.66 (60.6575 → 60.66), not 60.65.
-2. **Never chain conversions.** CNY → USD → MYR accumulates two rounding errors
-   and disagrees with the published CNY → MYR cross rate, which is computed as a
-   single ratio of two published rates.
-3. **Never sum across currencies.** The obvious `SELECT SUM(amount)` adds fen to
-   sen the moment two currencies are held, and the result looks entirely
-   plausible. Aggregates are grouped by currency first; each subtotal is exact,
-   then converted, then combined — so there is exactly one rounding step per
-   currency, at the end.
-4. **An unavailable rate is never treated as 1:1.** The amount is shown in its own
-   currency with a `*` marker, and the UI says rates are missing. A fabricated
-   1:1 rate is the most dangerous possible failure here, because the number looks
-   completely normal.
-
-### How balances are computed
-
-An account's balance is **always derived**, never stored:
-
-```sql
-opening_balance + (SELECT SUM(amount) FROM transactions WHERE account_id = a.id)
-```
-
-A stored running balance is a second copy of the truth that drifts the first time
-a write path forgets to update it. At personal-ledger scale the `SUM` is
-instant, so correctness wins.
-
-### How transfers avoid being counted as spending
-
-A transfer writes **two** rows with `type = 'transfer'`, one negative leg from the
-source account and one positive leg into the destination, both linked to a row in
-`transfers`. Because both legs carry their own type, every income/expense
-aggregate filters on `type IN ('income','expense')` and a transfer is excluded
-*by construction* — there is no report-time special case that someone can forget.
-
-For Maybank → Cash RM 500:
-
-```
-Maybank   -500.00     transfer leg
-Cash      +500.00     transfer leg
-period expense        unchanged
-total balance         unchanged
-```
-
-### How settlement cycles tile the calendar
-
-A cycle anchored on day *N* runs from the *N*th to the day before the next *N*th,
-so consecutive cycles tile the calendar with **no gap and no overlap**. That
-property is what keeps every transaction in exactly one period; a gap would
-silently drop rows from every report and an overlap would double-count them. It is
-asserted directly in `tests/periods.test.ts`.
-
-The anchor is capped at 28 because a cycle starting on the 31st has no 31st in
-February, so its length would vary between 28 and 31 days and the same transaction
-could fall into different cycles depending on the month.
+想先看看效果，点欢迎页的 **「用示例数据体验」**。示例数据只能加到空账本里，
+可以一键清除，不会影响你之后记录的真实数据。
 
 ---
 
-## Where your data lives
+## 开发
 
-```
-C:\Users\<you>\AppData\Roaming\CashInflow\spendwise.db
-```
-
-The exact path is shown in **Settings → Security**, with a button to reveal the
-file in Explorer.
-
-It is deliberately **not** stored next to the executable or in the project
-folder, because an installed application's directory may be read-only, a database
-beside the `.exe` is trivially exposed to anyone browsing the install folder, and
-uninstalling or updating should never destroy your financial history. The
-uninstaller does not remove this folder either.
-
-SQLite runs in WAL mode, so you will also see `spendwise.db-wal` and
-`spendwise.db-shm` alongside it. Those are normal and are folded back into the
-main file when the app closes cleanly.
-
----
-
-## Getting started
-
-**Requirements:** Windows 10 or 11. No Node.js, Python or other runtime is needed
-to *use* the app — only to build it.
-
-### Install from the installer
-
-1. Run `CashInflow-1.0.0-x64-setup.exe`.
-2. Choose an install location (or accept the default).
-3. Launch CashInflow from the Start menu or desktop shortcut.
-
-### Or run the portable build
-
-`CashInflow-1.0.0-x64-portable.exe` is a single self-contained file. Run it with
-no installation. It stores its data in the same AppData location.
-
-### First run
-
-```
-Launch
-  ↓
-Welcome screen
-  ↓
-Create your first account  (name, type, currency, opening balance)
-  ↓
-Dashboard
-```
-
-If you would rather look around before entering real data, press **Explore with
-sample data** on the welcome screen. Sample data can only be added to an empty
-ledger and is removed again in one step, so it can never mix with your own
-records.
-
----
-
-## Development
-
-**Requirements:** Node.js 22.12 or newer.
+需要 Node.js 22.12 或更高版本。
 
 ```bash
-# Install dependencies
-npm install
+npm install          # 安装依赖
 
-# Run the app with hot reload
-npm run dev
-
-# Type-check both the Node and the browser code
-npm run typecheck
-
-# Run the test suite
-npm test
-
-# Build without packaging
-npm run build
+npm run dev          # 开发模式（热重载）
+npm test             # 运行测试
+npm run typecheck    # 类型检查
+npm run build        # 生产构建
+npm run dist         # 打包 Windows 安装程序
 ```
 
-> **Note on the npm cache.** The `.npmrc` in this project points the npm cache at
-> a workspace-local directory. Some sandboxed environments export
-> `npm_config_cache` as an environment variable, and npm gives environment
-> variables higher precedence than project `.npmrc` files; if an install fails
-> with `EPERM ... npm-cache`, pass the cache explicitly:
-> `npm install --cache "C:\path\to\.npm-cache"`.
+> **关于 npm 缓存**：本项目的 `.npmrc` 把缓存指向工作区内目录。某些沙箱环境会
+> 导出 `npm_config_cache` 环境变量，而 npm 的环境变量优先级高于项目 `.npmrc`，
+> 此时需要显式传参：`npm install --cache "C:\path\to\.npm-cache"`
 
-### Project layout
+### 项目结构
 
 ```
 src/
-├── main/                     Electron main process (Node)
+├── main/                    Electron 主进程
 │   ├── database/
-│   │   ├── connection.ts     Open, configure (WAL, foreign keys), migrate, back up
-│   │   ├── migrations/       Versioned schema, each in a transaction
-│   │   ├── mappers.ts        SQLite rows -> domain objects
-│   │   └── errors.ts         Typed errors with stable codes
-│   ├── services/             All business rules
-│   │   ├── accounts.ts       CRUD + derived balances
-│   │   ├── transactions.ts   Ledger, transfers, aggregates
-│   │   ├── statistics.ts     Dashboard, trends, calendar
-│   │   ├── import.ts         Parse -> validate -> dedupe -> commit
-│   │   ├── csv.ts            RFC 4180 parser, date/amount normalisation
-│   │   ├── import-presets.ts Per-provider column mappings
-│   │   ├── settings.ts       Settings, budgets, subscriptions, recurring
-│   │   ├── demo.ts           Seeded sample data, isolated from real data
-│   │   └── validation.ts     Input validation
-│   ├── ipc/index.ts          Channel registration, error envelope
-│   └── index.ts              Startup, window, security configuration
-├── preload/index.ts          The contextBridge allow-list
-├── renderer/
-│   ├── index.html            Includes the Content-Security-Policy
+│   │   ├── connection.ts    打开、配置（WAL、外键）、迁移、备份
+│   │   ├── migrations/      版本化 schema，每个迁移在事务里执行
+│   │   ├── mappers.ts       SQLite 行 → 领域对象
+│   │   └── errors.ts        带稳定错误码的类型化异常
+│   ├── services/            全部业务规则
+│   │   ├── accounts.ts      账户 CRUD + 派生余额
+│   │   ├── transactions.ts  账本、转账、聚合
+│   │   ├── statistics.ts    总览、趋势、日历、自定义区间
+│   │   ├── exchange.ts      汇率抓取、缓存、手动覆盖
+│   │   ├── currency-aggregate.ts  ★ 跨币种聚合（只舍入一次）
+│   │   ├── import.ts        解析 → 校验 → 查重 → 提交
+│   │   ├── csv.ts           RFC 4180 解析、日期金额归一化
+│   │   ├── import-presets.ts 各平台列映射
+│   │   └── settings.ts      设置、预算、订阅、周期规则
+│   ├── ipc/index.ts         通道注册、错误信封
+│   └── index.ts             启动、窗口、安全配置
+├── preload/index.ts         contextBridge 白名单
+├── renderer/                React 界面
 │   └── src/
-│       ├── components/       Shell, dialogs, icons, charts
-│       ├── pages/            One file per route
-│       ├── hooks/useData.ts  Query + mutation hooks
-│       ├── store/            Zustand stores (app settings, UI)
-│       └── styles/           Design tokens and global CSS
-└── shared/                   Imported by BOTH processes
-    ├── types/                Domain types + the IPC contract
-    ├── lib/money.ts          Integer money arithmetic and formatting
-    ├── lib/dates.ts          Local calendar date handling
-    └── constants/            App constants and seeded categories
-
-tests/                        Vitest suites, run against a real SQLite file
+│       ├── components/      外壳、对话框、图标、图表
+│       ├── pages/           每个路由一个文件
+│       ├── store/           Zustand（设置、汇率、UI 状态）
+│       └── styles/          设计令牌 + 全局样式
+└── shared/                  两个进程共用
+    ├── types/               领域类型 + IPC 契约
+    ├── lib/money.ts         整数金额运算与格式化
+    ├── lib/rates.ts         ★ 汇率换算（单次舍入）
+    ├── lib/periods.ts       ★ 结算周期与自定义区间
+    ├── lib/dates.ts         本地日历日期处理
+    └── lib/i18n.ts          全部中文界面文案
 ```
 
 ---
 
-## Building
+## 测试
 
 ```bash
-npm run build      # type-check, then bundle main + preload + renderer into out/
+npm test
 ```
 
-`out/` then contains `main/index.js`, `preload/index.js` and `renderer/`.
+**204 个用例，跑真实 SQLite 文件，不用 mock。**
 
----
-
-## Packaging a Windows installer
-
-```bash
-npm run dist
-```
-
-This runs the build and then electron-builder, producing in `release/`:
-
-| Artifact | Description |
+| 测试文件 | 覆盖内容 |
 |---|---|
-| `CashInflow-1.0.0-x64-setup.exe` | NSIS installer — choose the install directory, creates Start-menu and desktop shortcuts |
-| `CashInflow-1.0.0-x64-portable.exe` | Single self-contained executable, no installation |
+| `money.test.ts` | 整数运算、解析、格式化，以及所规避的浮点失败模式 |
+| `rates.test.ts` | 换算舍入、交叉汇率、缺失汇率、新鲜度分级 |
+| `periods.test.ts` | 周期运算、**日历无缝铺满**、任意区间校验 |
+| `multi-currency.test.ts` | 服务层跨币种聚合、周期感知预算、离线汇率回退 |
+| `ledger.test.ts` | schema 与迁移、余额、转账、校验、引用完整性、持久化 |
+| `import-parser.test.ts` | RFC 4180、分隔符嗅探、表头定位、日期金额归一化 |
+| `import-e2e.test.ts` | 真实文件全流程、查重、微信/支付宝预设、GBK 编码 |
+| `acceptance.test.ts` | 规格书里的验收标准逐条实现为测试 |
 
-`npm run dist:dir` produces an unpacked `release/win-unpacked/` directory instead,
-which is quicker when you only want to smoke-test the packaged app.
+两个值得一提的断言：
 
-### The one packaging detail that matters
+```js
+// 规格书点名的浮点检查
+100.10 + 200.20  →  30030 分，精确
+                而不是 300.29999999999995
 
-`electron-builder.yml` sets **`npmRebuild: false`** and unpacks the native module:
+// 转账不变式
+Maybank → Cash RM500 后，两个账户余额之和不变，本期支出不变
+```
+
+---
+
+## 已知限制
+
+**未实现**
+
+- 不直连银行 / 微信 / 支付宝 API，只做文件导入
+- 数据库文件**不加密**（请用 BitLocker 等全盘加密）
+- 不支持一笔支出拆分到多个分类
+- 不支持收据 / 附件图片
+- **不支持跨币种转账**：需要给转账本身套汇率，两腿会不等值。宁可拒绝也不近似
+- 导入的交易不自动分类（分类来自文件或归为「其他」）
+- 不支持 `.xls`（旧版 Excel）和 PDF 导入，需另存为 `.xlsx` 或 CSV
+
+**需要知道的**
+
+- **汇率是中间价**，不是你银行卡或汇款公司的实际成交价，后者含点差
+- **汇率最多每 6 小时更新一次**（三个数据源都是日更），这是参考汇率不是实时牌价
+- **手动汇率会完全替换在线汇率**，且在你主动刷新前不会被自动覆盖
+- 单实例运行；第二次启动会聚焦已有窗口，避免两个窗口显示不同数据
+- 示例数据只能加到空账本，这保证了示例永远不会混进真实数据
+- 分类改名不会改写历史（交易引用的是分类 id）
+- **分类类型和有交易的账户币种都不能改**，因为会重新解释每一笔历史交易
+- 重复检测**只在同一账户内比对**，同一笔消费导入到两个账户不会被识别
+
+**平台**
+
+- 在 Windows 10 / 11 x64 上构建与验证。架构本身跨平台，但只配置了 Windows 打包
+
+---
+
+## 技术栈
+
+| 层 | 选型 | 原因 |
+|---|---|---|
+| 外壳 | Electron 44 | 能产出真正的 Windows `.exe` 和安装程序 |
+| 界面 | React 19 + TypeScript | 开发快，长期可维护 |
+| 构建 | electron-vite 5 + Vite 7 | 一份配置产出 main / preload / renderer 三个包 |
+| 数据库 | better-sqlite3 13 | 真正的嵌入式关系库，同步 API，零配置 |
+| 图表 | 手写 SVG | 不需要图表库；这个应用只需要五种图形 |
+| 状态 | Zustand | 很小，且只有真正全局的状态才放进去 |
+| 表格 | ExcelJS | MIT 协议，支持流式读取 XLSX |
+| 测试 | Vitest | 快，且跑真实数据库而不是 mock |
+
+**运行时依赖只有两个：`better-sqlite3` 和 `exceljs`。**
+
+### 打包时最关键的一行
+
+`electron-builder.yml` 里设了 **`npmRebuild: false`** 并解包原生模块：
 
 ```yaml
 npmRebuild: false
@@ -491,282 +418,50 @@ asarUnpack:
   - node_modules/better-sqlite3/**
 ```
 
-better-sqlite3 v13 is built on N-API and ships prebuilt binaries for win32-x64.
-electron-builder's `npmRebuild` defaults to `true`, which makes `@electron/rebuild`
-recompile anything with a `binding.gyp` — discarding the shipped prebuild in
-favour of one built against a different ABI that then fails to load at runtime
-with a module-version mismatch. Separately, a `.node` binary cannot be loaded
-from inside an `app.asar` archive, which is why `asarUnpack` is required rather
-than optional.
-
-If you change the database driver, revisit those two lines first.
+better-sqlite3 v13 基于 N-API，自带 win32-x64 预编译二进制。而 electron-builder 的
+`npmRebuild` 默认是 `true`，会让 `@electron/rebuild` 重新编译任何带 `binding.gyp`
+的包——**丢掉自带的预编译版本**，换成针对不同 ABI 编译的版本，运行时就会以
+模块版本不匹配失败。另外 `.node` 文件无法从 `app.asar` 内部加载，所以
+`asarUnpack` 是必需项而非优化项。
 
 ---
 
-## Backing up and restoring
+## English overview
 
-### Export Database (backup)
+**A local-first, multi-currency personal finance manager for Windows**, built for
+Chinese students studying abroad.
 
-**Settings → Data → Export Database**. Choose where to save the `.db` file.
+**Three things set it apart:**
 
-The backup is produced with SQLite's `VACUUM INTO`, not a file copy. While WAL
-mode is active, copying `spendwise.db` directly would omit everything still in the
-write-ahead log; `VACUUM INTO` asks SQLite for a complete, consistent,
-defragmented snapshot. The resulting file is a fully working database on its own.
+1. **Settlement cycles, not calendar months.** If your allowance arrives on the
+   5th, "this month" means 5 Aug – 4 Sep. Every figure — dashboard, statistics,
+   budget — follows the cycle you configure. A calendar month starting on the 3rd
+   reports that you have spent ¥0, which is both true and useless.
 
-### Import Backup (restore)
+2. **Real multi-currency.** Hold CNY, MYR, SGD, USD, HKD and more. Switch the
+   display currency and every figure re-converts. Live rates come from three free
+   key-less providers tried in order, cached in SQLite, and fully usable offline.
+   Switching currency never modifies a stored amount.
 
-**Settings → Data → Import Backup**. Pick a `.db` file.
+3. **Statement import.** WeChat Pay, Alipay (GBK-encoded, 24-line preamble),
+   Maybank, CIMB, and any generic CSV/XLSX, with duplicate detection that lets two
+   genuine same-day purchases through while catching a re-import of the same file.
 
-Before anything is replaced, the app:
+**Correctness is the design goal, not a feature.** Amounts are integers in each
+currency's minor unit, balances are derived rather than stored, transfers are
+written twice and structurally excluded from spending, and cross-currency totals
+are grouped by currency and rounded exactly once. An unavailable rate is reported
+rather than silently treated as 1:1.
 
-1. **Validates the candidate** — opens it read-only and checks that the expected
-   tables exist and that its schema version is not newer than this build. A file
-   that is not a CashInflow backup is rejected *before* your data is touched.
-2. **Takes a safety snapshot** of your current database into the app data folder.
-3. **Closes, swaps the file, and reopens.**
+**Privacy:** all data lives in `%APPDATA%\CashInflow`. The only network call is the
+exchange-rate lookup; the renderer is forbidden from making any outbound
+connection by its Content-Security-Policy.
 
-Restore is a file replacement rather than a row-by-row copy, so the result is
-byte-for-byte the backup you chose. A restore always asks for confirmation first.
-
-### Manual backup
-
-You can also simply copy the whole `%APPDATA%\CashInflow` folder while the app is
-closed. To restore, put it back.
-
-### Export CSV
-
-**Settings → Data → Export CSV** (or the Export button on the search and
-biggest-expenses pages) writes transactions as CSV. The file starts with a UTF-8
-BOM so Excel opens it correctly instead of misreading non-ASCII merchant names,
-and fields containing commas, quotes or newlines are quoted per RFC 4180.
-
----
-
-## Importing statements
-
-CashInflow does **not** connect to bank, WeChat or Alipay APIs. Export a statement
-from the provider's app or website, then import the file.
-
-### Supported formats
-
-| Preset | Notes |
-|---|---|
-| **Custom CSV** | Auto-detects columns, delimiter and header position |
-| **WeChat Pay** | 微信支付账单明细 — the header is located automatically |
-| **Alipay** | 支付宝电子客户回单 — GBK encoded with a long preamble |
-| **Maybank** | Separate Debit and Credit columns |
-| **CIMB** | Separate Debit and Credit columns |
-| **Any XLSX** | Reads the first worksheet |
-
-### How the parser copes with real files
-
-- **Junk preambles.** WeChat and Alipay prepend many lines, and the count varies
-  between exports. The parser scans for the row that actually looks like a header
-  instead of trusting a fixed offset.
-- **Footer summaries.** Rows like `共43笔记录` and `总计` are skipped, not imported
-  as transactions.
-- **Encoding.** Files are sniffed: valid UTF-8 is read as UTF-8, otherwise
-  GB18030/GBK. A wrongly guessed encoding silently corrupts every merchant name,
-  so a preset that declares GBK still reads a UTF-8 file correctly.
-- **Amounts.** `¥28.16`, `￥50.0`, `RM1,234.56`, `(123.45)`, `123.45-` and the
-  European `1.234,56` are all understood. A dash or an empty cell means "no
-  amount", not zero.
-- **Dates.** `2026-09-26 14:05:00`, `26/09/2026`, `09/26/2026`, `26 Sep 2026`,
-  `19 Jul 2024` and `20260926` are all recognised. Ambiguous `03/04/2026` follows
-  your date-format setting; when a component is greater than 12 the format is
-  unambiguous and the setting is ignored.
-- **Quoted fields.** A description containing a comma, a quote or a newline is
-  handled per RFC 4180.
-
-### Duplicate detection
-
-Re-importing the same file must not double your spending, yet two genuine RM 4.50
-coffees on the same day must both survive. Those requirements conflict for any
-key built only from date, amount and payee, so CashInflow uses:
-
-1. **The provider's own transaction id** when the file has one (WeChat 交易单号,
-   Alipay 交易订单号).
-2. **Otherwise a content hash** over the account, date, amount, normalised payee
-   and description — plus an **occurrence counter** counting earlier rows in the
-   same batch that share account, date, amount and payee.
-
-The occurrence counter is what reconciles the two requirements: two identical
-coffees become index 0 and index 1 and both import, while re-importing the same
-file reproduces indices 0 and 1 exactly and collides with the stored hashes.
-
-Rows flagged as duplicates are **unticked but not blocked** — you can still
-include them, because a genuine second purchase is not an error. A partial
-`UNIQUE` index on `transactions.import_hash` is the final guard, so a duplicate
-cannot slip through even if the pre-check were bypassed.
-
-The hash is computed once, at import, and never recomputed. That matters: if it
-were recomputed after you renamed a merchant, the edited row would look brand new
-and the next import would recreate it.
-
-### Rolling back an import
-
-Every confirmed import is recorded in **Settings → Import history**, where the
-whole batch can be rolled back. Only rows from that batch are removed; anything
-you added by hand is untouched.
-
----
-
-## Design decisions that matter
-
-**Data correctness beats everything.** Balances are derived, amounts are integers,
-transfers are typed rather than special-cased, and the database is the single
-source of truth. No figure on any screen is hardcoded — every number comes from a
-query, which is why the dashboard after one transaction runs the same code as the
-dashboard after a year.
-
-**Nothing fails silently.** A failed load shows a message and a retry button. A
-failed write toasts the real reason plus "No changes were made", because every
-mutation is wrapped in a transaction. An empty list and a failed query look
-identical to a user, and in a finance app the difference is everything.
-
-**The app never rewrites your financial data on its own.** Recurring rules produce
-*suggested* transactions that you confirm. Nothing is posted automatically.
-
-**Categories cannot be deleted out from under history.** Deleting a category that
-is in use is refused, and the app then offers to move its transactions somewhere
-else — an explicit choice, never a silent reassignment to "Other".
-
-**Accounts with history cannot be deleted.** The foreign key is `RESTRICT`, so
-deleting an account with transactions is refused and archiving is offered instead.
-Uncategorised tidying must never destroy records.
-
-**Currencies are never summed together.** RM 5,000 and ¥5,000 are not the same
-quantity. Balances are reported per currency, and a single total appears only when
-one currency is in play. Transfers between different currencies are rejected
-rather than approximated, because the app has no exchange rate.
-
-**Dates are local calendar dates, not instants.** A purchase at 23:30 on the 26th
-stays on the 26th regardless of the machine's timezone. Storing an instant would
-move it a day for some users and make "today's transactions" disagree with the
-bank statement.
-
----
-
-## Testing
-
-```bash
-npm test
-```
-
-204 tests across ten suites. They run against a **real temporary SQLite file**,
-not mocks — the failures that matter (a footer imported as a transaction, a
-re-import doubling spending, a GBK file read as UTF-8) only appear when real bytes
-meet a real database.
-
-| Suite | Covers |
-|---|---|
-| `money.test.ts` | Integer arithmetic, parsing, formatting, and the float failure modes being avoided |
-| `dates.test.ts` | Local date formatting, month/year boundaries, ISO weeks, leap years |
-| `ledger.test.ts` | Schema and migrations, balances, transfers, validation, referential integrity, persistence |
-| `import-parser.test.ts` | RFC 4180 parsing, delimiter sniffing, header detection, amount and date normalisation |
-| `import-e2e.test.ts` | Full import pipeline against real files, duplicate detection, WeChat/Alipay presets, GBK |
-| `acceptance.test.ts` | The numbered acceptance criteria from the specification, executed |
-| `manual-seed.test.ts` | Skipped by default; seeds the live database for visual inspection |
-
-Two tests are worth pointing at specifically:
-
-```
-RM 100.10 + RM 200.20  ->  30030 minor units, exact
-                     versus  300.29999999999995 as floats
-```
-
-and the transfer invariant: after Maybank → Cash RM 500, the sum of both account
-balances is unchanged and the month's expense total is untouched.
-
----
-
-## Security
-
-This is local personal-finance software, so the security posture is deliberately
-narrow.
-
-- **All data stays on this machine.** No remote database, no telemetry, no
-  analytics, and no network calls of any kind. The Content-Security-Policy in
-  `index.html` restricts the renderer to its own bundle; there is no code path
-  that sends transaction data anywhere.
-- **The renderer cannot reach SQLite or the filesystem.** `contextIsolation` is
-  on, `nodeIntegration` is off, and the preload exposes a fixed list of named
-  methods rather than `ipcRenderer` itself.
-- **No SQL text crosses the IPC bridge** — only data, which the main process binds
-  as query parameters. A merchant literally named `'; DROP TABLE transactions; --`
-  is just an unusual merchant name.
-- **File paths only arrive through a native file dialog** the user drove.
-- **Navigation is locked down.** In-app navigation away from the bundled UI is
-  blocked, new windows are denied, and permission requests (camera, geolocation,
-  notifications) are refused outright.
-- **The database is in the OS app-data directory**, not in the project folder or
-  beside the executable.
-- **No secrets in the source.** There are none to have — the app has no server,
-  no API keys and no accounts.
-
-Anyone with access to your Windows user account can read the database file, as
-they could read any file in your profile. CashInflow does **not** encrypt it at
-rest; whole-disk encryption such as BitLocker is the appropriate control for that
-threat, and Settings → Security says so.
-
----
-
-## Known limitations
-
-These are honest gaps, not oversights.
-
-**Not implemented**
-
-- **No bank, WeChat or Alipay API integration.** Import is file-based only, by
-  design for the MVP.
-- **No encryption of the database file** at rest. Use BitLocker or similar.
-- **No transaction splits** (one expense across several categories).
-- **No attachments or receipt images.**
-- **No cross-currency transfers.** Moving money between accounts in different
-  currencies needs an exchange rate applied to the transfer itself, which would
-  make the two legs unequal. Refused rather than approximated — record two
-  separate transactions instead.
-- **Exchange rates are indicative mid-market figures**, not the rate a bank or
-  remittance service will give you. Card and transfer rates include a spread.
-- **Rates are fetched at most once every six hours**, because all three providers
-  publish daily. This is a daily reference rate, not a live trading quote.
-- **A manual rate table replaces the fetched one entirely** and is not refreshed
-  automatically until you ask, so a rate you trust is never silently overwritten.
-- **No automatic categorisation** of imported rows; categories come from the file
-  or from "其他".
-- **No data sync between machines.** Copy a backup file instead.
-- **No `.xls` (legacy Excel) or PDF import.** Re-save as `.xlsx` or CSV — the
-  importer detects the old format and says so rather than producing garbage.
-- **Recurring rules are reminders, not automation.** They never post to the ledger
-  without confirmation.
-
-**Worth knowing**
-
-- **Single instance only.** Launching a second copy focuses the existing window
-  rather than opening a second one, so two windows cannot show divergent data.
-- **Demo data requires an empty ledger.** This is what guarantees sample rows can
-  never be interleaved with your real records.
-- **Renaming a category does not rewrite history** — it renames the category, and
-  past transactions follow automatically because they reference its id.
-- **A category's type cannot be changed** after it has been used, since that would
-  reinterpret every past transaction as the opposite of what it was. Create a new
-  category instead.
-- **An account's currency cannot be changed** once it has transactions, for the
-  same reason: the stored integers would be reinterpreted in a different unit.
-- **Duplicate detection compares within one account.** Importing the same
-  purchase into two different accounts will not be caught.
-- **Alipay `不计收支` and WeChat neutral rows are skipped**, not converted into
-  transfers, because the MVP imports income and expense only. They are listed in
-  the preview with the reason so nothing disappears without explanation.
-
-**Platform**
-
-- Built and tested on Windows 10/11 x64. The architecture is cross-platform, but
-  only Windows packaging is configured and verified.
+**204 tests** run against a real SQLite file, including the specification's
+acceptance criteria as executable tests.
 
 ---
 
 ## License
 
-MIT.
+MIT

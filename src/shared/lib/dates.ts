@@ -204,26 +204,21 @@ export function calendarGridStart(monthKey: string, weekStartsOn: 0 | 1 = 1): Da
 }
 
 /**
- * Short display label. Deliberately hand-rolled rather than
- * Intl.DateTimeFormat so the output is deterministic in tests and identical
- * across machines regardless of installed ICU data.
+ * Short display labels, in Simplified Chinese.
+ *
+ * Deliberately hand-rolled rather than Intl.DateTimeFormat for two reasons:
+ *
+ *   1. Determinism. `Intl` output depends on the ICU data installed on the
+ *      machine, so the same date can render differently on two computers. Labels
+ *      that shift between machines are a support burden in a grouped ledger.
+ *   2. Language. The app ships in one language, so the labels are constants. A
+ *      locale-aware formatter would be the right tool the day a second language
+ *      is added, and these are the only five places that would need to change.
  */
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const MONTHS_LONG = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December'
-]
-const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS_SHORT = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+const MONTHS_LONG = MONTHS_SHORT
+/** Indexed by Date.getDay(): 0 = Sunday. */
+const WEEKDAYS_SHORT = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
 export function monthName(monthIndex: number): string {
   return MONTHS_LONG[monthIndex] ?? ''
@@ -237,11 +232,11 @@ export function weekdayNameShort(dayIndex: number): string {
   return WEEKDAYS_SHORT[dayIndex] ?? ''
 }
 
-/** 'September 2026' from '2026-09'. */
+/** '2026年9月' from '2026-09'. */
 export function formatMonthLabel(monthKey: string): string {
   const [y, m] = monthKey.split('-').map(Number)
   if (!y || !m) return monthKey
-  return `${monthName(m - 1)} ${y}`
+  return `${y}年${m}月`
 }
 
 /**
