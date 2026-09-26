@@ -7,7 +7,9 @@
   <img alt="React" src="https://img.shields.io/badge/React-19-087EA4?logo=react&logoColor=white">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white">
+  <img alt="Release" src="https://img.shields.io/github/v/release/Lidazou/CashInflow?color=16A34A&label=release">
   <img alt="Tests" src="https://img.shields.io/badge/tests-204%20passing-16A34A">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white">
 </p>
 
@@ -252,15 +254,27 @@ Cash      +500.00    转账腿
 
 ## 安装使用
 
-### 安装版
+前往 **[Releases](https://github.com/Lidazou/CashInflow/releases/latest)** 下载。
 
-下载 `CashInflow-1.1.0-x64-setup.exe`，双击安装。会创建开始菜单和桌面快捷方式。
+| 文件 | 说明 |
+|---|---|
+| `CashInflow-1.2.0-x64-setup.exe` | **安装版**。创建开始菜单与桌面快捷方式，并注册卸载项 |
+| `CashInflow-1.2.0-x64-portable.exe` | **免安装单文件版**。直接双击运行，不写注册表、不建快捷方式 |
+| `SHA256SUMS.txt` | 上面两个文件的 SHA-256 校验和 |
 
-### 免安装版
+两个版本功能完全相同，读写同一个数据库。
 
-下载 `CashInflow-1.1.0-x64-portable.exe`，直接运行，不写注册表。
+**不需要管理员权限**，也**不需要预装 Node.js 或任何运行环境** —— 116 MB 里已经包含
+整个 Electron 运行时。这就是它比普通记账软件大的原因。
 
-两类安装包都在 [Releases](../../releases) 里。卸载**不会**删除你的账本数据。
+> 安装包没有代码签名证书，所以 Windows SmartScreen 可能会提示「未知发布者」。
+> 点「更多信息」→「仍要运行」即可。介意的话可以用免安装版，或者先核对
+> `SHA256SUMS.txt` 里的校验和。
+
+### 卸载
+
+从「设置 → 应用」或开始菜单卸载。**卸载不会删除你的账本数据** —— 数据库留在
+`%APPDATA%\CashInflow`，重新安装后账目原样还在。
 
 ### 第一次打开
 
