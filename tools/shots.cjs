@@ -20,7 +20,7 @@
  * Usage: node tools/shots.cjs [name ...]      (no names = all)
  */
 const http = require('node:http')
-const { writeFileSync, mkdirSync } = require('node:fs')
+const { writeFileSync, mkdirSync, rmSync, existsSync, statSync } = require('node:fs')
 const { join } = require('node:path')
 
 const PORT = Number(process.env.CDP_PORT ?? 9222)
@@ -40,6 +40,89 @@ const getJson = (path) =>
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
+ * Browser-side helper source, inlined into every step.
+ *
+ * `setTheme` drives the header toggle rather than calling `settingsUpdate`
+ * directly. The toggle is what a user does, so the screenshots exercise the real
+ * path; and an earlier version of this file set the theme through the API and
+ * produced a LIGHT "dark mode" screenshot, because the API writes SQLite while
+ * `applyTheme` — which paints the document — is reached through the store action
+ * that the toggle calls.
+ */
+const HELPERS = `
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const byText = (text, selector) =>
+    Array.from(document.querySelectorAll(selector)).find((el) => el.textContent.trim() === text);
+  /**
+   * Scroll the content area back to the top.
+   *
+   * The steps share one live window, so a page left scrolled (the settings step
+   * scrolls to the cycle block, and focusing the currency select scrolls whatever
+   * contains it) leaked that scroll offset into the NEXT screenshot — which is how
+   * the headline dashboard image ended up with its currency bar half cut off.
+   */
+  const scrollTop = async () => {
+    const scrollers = [document.scrollingElement, document.documentElement, document.body,
+      ...document.querySelectorAll('.sw-shell__main, main, [class*="scroll"]')];
+    for (const el of scrollers) {
+      if (!el) continue;
+      try { el.scrollTop = 0; el.scrollTo?.({ top: 0, behavior: 'instant' }); } catch {}
+    }
+    window.scrollTo(0, 0);
+    await sleep(250);
+  };
+  const nav = (label) => {
+    const link = Array.from(document.querySelectorAll('a, button'))
+      .find((el) => el.textContent.trim() === label);
+    if (!link) throw new Error('nav item not found: ' + label);
+    link.click();
+  };
+  const currentTheme = () => {
+    const label = Array.from(document.querySelectorAll('button'))
+      .map((b) => b.getAttribute('aria-label') || '')
+      .find((t) => t.includes('主题：'));
+    if (!label) return null;
+    if (label.includes('主题：浅色')) return 'light';
+    if (label.includes('主题：深色')) return 'dark';
+    return 'system';
+  };
+  /** Click the header theme toggle until the requested mode is stored. */
+  const setTheme = async (want) => {
+    const toggle = Array.from(document.querySelectorAll('button'))
+      .find((b) => (b.getAttribute('aria-label') || '').includes('主题'));
+    if (!toggle) throw new Error('theme toggle missing');
+    for (let i = 0; i < 4; i += 1) {
+      if (currentTheme() === want) return want;
+      toggle.click();
+      await sleep(900);
+    }
+    throw new Error('could not reach theme ' + want + ' (at ' + currentTheme() + ')');
+  };
+  const setPeriodMode = async (label) => {
+    const button = byText(label, '.sw-dash__mode');
+    if (!button) throw new Error('period toggle missing: ' + label);
+    button.click();
+    await sleep(1600);
+  };
+  /**
+   * Set the display currency through the currency bar's own select.
+   *
+   * Reset explicitly rather than assuming a default: the switcher is persisted, so
+   * the dashboard-myr step used to leak MYR into every later run and produced a
+   * "CNY" screenshot showing ringgit.
+   */
+  const setCurrency = async (code) => {
+    const select = document.querySelector('.sw-currency-bar select');
+    if (!select) throw new Error('currency switcher missing');
+    const option = Array.from(select.options).find((o) => o.value === code);
+    if (!option) throw new Error('currency option missing: ' + code);
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, code);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(1800);
+  };
+`
+
+/**
  * Each step is a browser-side async function returning a short description.
  *
  * Kept as source strings evaluated in the page rather than as DOM-driving from
@@ -51,19 +134,13 @@ const STEPS = [
     name: 'dashboard',
     settle: 2000,
     body: `async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const nav = (label) => {
-        const link = Array.from(document.querySelectorAll('a, button'))
-          .find((el) => el.textContent.trim() === label);
-        if (!link) throw new Error('nav item not found: ' + label);
-        link.click();
-      };
+      ${HELPERS}
       nav('总览');
       await sleep(1200);
-      const modes = Array.from(document.querySelectorAll('.sw-dash__mode'));
-      const cycle = modes.find((b) => b.textContent.trim() === '结算周期');
-      if (cycle) cycle.click();
-      await sleep(1500);
+      await setTheme('light');
+      await setCurrency('CNY');
+      await setPeriodMode('结算周期');
+      await scrollTop();
       return 'dashboard ' + (document.querySelector('.sw-dash__month-label')?.innerText ?? '');
     }`
   },
@@ -71,12 +148,9 @@ const STEPS = [
     name: 'dashboard-natural',
     settle: 1800,
     body: `async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const natural = Array.from(document.querySelectorAll('.sw-dash__mode'))
-        .find((b) => b.textContent.trim() === '自然月');
-      if (!natural) throw new Error('自然月 toggle missing');
-      natural.click();
-      await sleep(1500);
+      ${HELPERS}
+      await setPeriodMode('自然月');
+      await scrollTop();
       return 'natural month: ' + (document.querySelector('.sw-dash__month-label')?.innerText ?? '');
     }`
   },
@@ -84,17 +158,27 @@ const STEPS = [
     name: 'dashboard-custom',
     settle: 1800,
     body: `async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const custom = Array.from(document.querySelectorAll('.sw-dash__mode'))
-        .find((b) => b.textContent.trim() === '自定义区间');
-      if (!custom) throw new Error('自定义区间 toggle missing');
-      custom.click();
-      await sleep(1500);
+      ${HELPERS}
+      const pad = (n) => String(n).padStart(2, '0');
+      const iso = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+
+      // Reset the window to 最近 30 天 before shooting. A range left over from an
+      // experiment ("a future month with nothing in it") made an earlier run
+      // produce a screenshot of an empty ring, which is not what this image is for.
+      const to = new Date();
+      const from = new Date(to.getFullYear(), to.getMonth(), to.getDate() - 29);
+      await window.api.settingsUpdate({
+        dashboardRange: { from: iso(from), to: iso(to), label: null, budgetAmount: null }
+      });
+      await setPeriodMode('自定义区间');
+      await sleep(900);
+
       const summary = document.querySelector('.sw-dash__range-summary');
       if (summary && summary.getAttribute('aria-expanded') !== 'true') {
         summary.click();
-        await sleep(600);
+        await sleep(700);
       }
+      await scrollTop();
       return 'custom range: ' + (summary?.innerText.replace(/\\n/g, ' ') ?? '');
     }`
   },
@@ -215,50 +299,46 @@ const STEPS = [
     name: 'dashboard-dark',
     settle: 2400,
     body: `async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      // Close any open dialog first, then switch theme from the header toggle.
+      ${HELPERS}
+      // Close any open dialog, go home, then drive the real theme toggle.
       const close = document.querySelector('[role="dialog"] button[aria-label]');
       if (close) close.click();
       await sleep(300);
-      const nav = Array.from(document.querySelectorAll('a, button'))
-        .find((el) => el.textContent.trim() === '总览');
-      if (nav) nav.click();
+      nav('总览');
       await sleep(900);
-      const toggle = Array.from(document.querySelectorAll('button'))
-        .find((b) => (b.getAttribute('aria-label') ?? '').includes('主题'));
-      if (toggle) toggle.click();
-      await sleep(1400);
-      return 'dark: ' + document.documentElement.className;
+      await setTheme('dark');
+      await setPeriodMode('结算周期');
+      await scrollTop();
+      return 'dark: ' + (document.documentElement.className || '(none)');
     }`
   },
   {
     name: 'dashboard-myr',
     settle: 2400,
     body: `async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      // Back to the default settlement cycle, and out of any custom range, so the
-      // MYR shot is directly comparable with the CNY one.
-      const cycle = Array.from(document.querySelectorAll('.sw-dash__mode'))
-        .find((b) => b.textContent.trim() === '结算周期');
-      if (cycle) cycle.click();
-      await sleep(1200);
-      const select = document.querySelector('.sw-currency-bar select');
-      if (!select) throw new Error('currency switcher missing');
-      const myr = Array.from(select.options).find((o) => o.value === 'MYR');
-      if (!myr) throw new Error('MYR option missing');
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'MYR');
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      await sleep(2200);
-      return 'display currency MYR';
+      ${HELPERS}
+      // Back to the default settlement cycle, out of any custom range and in the
+      // light theme, so this shot is directly comparable with the CNY one.
+      await setTheme('light');
+      await setPeriodMode('结算周期');
+      await setCurrency('MYR');
+      await scrollTop();
+      return 'display currency MYR (theme ' + currentTheme() + ')';
     }`
   }
 ]
 
-async function main() {
-  const wanted = process.argv.slice(2)
-  const steps = wanted.length > 0 ? STEPS.filter((step) => wanted.includes(step.name)) : STEPS
-  if (steps.length === 0) throw new Error('no matching steps: ' + wanted.join(', '))
-
+/**
+ * Open one CDP session against the page target.
+ *
+ * A session PER SHOT is the default, and that is not an accident. A single
+ * long-lived connection reliably stalled on `Page.captureScreenshot` after a few
+ * shots — the app stayed responsive and the same capture succeeded immediately on a
+ * fresh connection, so the cost (one websocket per screenshot) buys a run that
+ * finishes. `--persistent` switches to one connection for the whole run, which is
+ * faster when it works.
+ */
+async function connect() {
   const target = (await getJson('/json/list')).find((t) => t.type === 'page')
   if (!target) throw new Error('no page target on port ' + PORT + ' — is the app running?')
 
@@ -298,23 +378,78 @@ async function main() {
     return result.result.value
   }
 
-  // The viewport is never overridden: synthesising a larger one makes the capture
-  // surface exceed the real window and Page.captureScreenshot then times out.
-  await call('Page.bringToFront')
+  return { ws, call, evaluate }
+}
+
+async function main() {
+  const args = process.argv.slice(2)
+  const persistent = args.includes('--persistent')
+  const wanted = args.filter((arg) => !arg.startsWith('--'))
+  const steps = wanted.length > 0 ? STEPS.filter((step) => wanted.includes(step.name)) : STEPS
+  if (steps.length === 0) throw new Error('no matching steps: ' + wanted.join(', '))
+
   mkdirSync(OUT_DIR, { recursive: true })
+  const shared = persistent ? await connect() : null
+  if (shared) await shared.call('Page.bringToFront')
 
-  for (const step of steps) {
-    const note = await evaluate(`(${step.body})()`)
-    await sleep(step.settle)
-    const { data } = await call('Page.captureScreenshot', { format: 'png' })
-    const buffer = Buffer.from(data, 'base64')
-    writeFileSync(join(OUT_DIR, step.name + '.png'), buffer)
-    console.log(
-      `  ${step.name}.png  ${Math.round(buffer.length / 1024)} KB` + (note ? `   [${note}]` : '')
-    )
+  try {
+    for (const step of steps) {
+      let session = shared ?? (await connect())
+      // The viewport is never overridden: synthesising a larger one makes the
+      // capture surface exceed the real window and the capture then times out.
+      if (!shared) await session.call('Page.bringToFront')
+
+      const note = await session.evaluate(`(${step.body})()`)
+      await sleep(step.settle)
+
+      /**
+       * Capture, retrying on a FRESH CONNECTION.
+       *
+       * `Page.captureScreenshot` intermittently times out on this machine while the
+       * page stays fully responsive to `Runtime.evaluate`, and the identical call
+       * then succeeds on a new websocket. That was measured, not assumed — see
+       * `tools/probe-capture.cjs`, which reports the default method succeeding on a
+       * fresh session in about a second. The failure therefore lives in the CDP
+       * session rather than in the app, so the remedy is to discard the session
+       * instead of waiting longer or skipping the shot.
+       */
+      const outPath = join(OUT_DIR, step.name + '.png')
+      let captured = null
+      let lastError = null
+
+      for (let attempt = 1; attempt <= 3 && captured === null; attempt += 1) {
+        try {
+          const result = await session.call('Page.captureScreenshot', { format: 'png' })
+          captured = result.data
+        } catch (error) {
+          lastError = error
+          if (shared) break // one connection for the whole run: nothing to reconnect
+          try {
+            session.ws.close()
+          } catch {
+            /* already closing */
+          }
+          await sleep(400 * attempt)
+          session = await connect()
+          await session.call('Page.bringToFront')
+        }
+      }
+
+      if (captured === null) {
+        throw new Error(
+          `capture failed for ${step.name}: ${lastError ? lastError.message : 'no image data'}`
+        )
+      }
+
+      writeFileSync(outPath, Buffer.from(captured, 'base64'))
+      const size = Math.round(statSync(outPath).size / 1024)
+      console.log(`  ${step.name}.png  ${size} KB` + (note ? `   [${note}]` : ''))
+
+      if (!shared) session.ws.close()
+    }
+  } finally {
+    shared?.ws.close()
   }
-
-  ws.close()
 }
 
 main().then(

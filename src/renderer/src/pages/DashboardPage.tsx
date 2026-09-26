@@ -471,100 +471,107 @@ export default function DashboardPage(): JSX.Element {
             </div>
           </section>
 
-          {/* ---------------- middle: today ---------------- */}
-          <section className="card sw-dash__col" aria-labelledby="sw-dash-today">
-            <div className="sw-dash__colhead">
-              <h2 className="card-title" id="sw-dash-today">
-                {T.today}
-              </h2>
-              <p className="muted sw-dash__subhead">{dateHeadingZh(summary.todayDate, dateFormat)}</p>
-            </div>
-
-            <dl className="sw-dash__figures sw-dash__figures--compact">
-              <Figure
-                label={T.income}
-                value={<Money minor={summary.today.income} currency={summary.today.currency} />}
-                tone="text-income"
-              />
-              <Figure
-                label={T.expense}
-                value={<Money minor={summary.today.expense} currency={summary.today.currency} />}
-                tone="text-expense"
-              />
-              <Figure
-                label={T.net}
-                value={<Money minor={summary.today.net} currency={summary.today.currency} signed />}
-                tone={summary.today.net >= 0 ? 'text-income' : 'text-expense'}
-              />
-            </dl>
-
-            {todayState.error && !todayPage ? (
-              <div className="sw-dash__inline-error" role="alert">
-                <p className="muted">{todayState.error}</p>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={todayState.reload}>
-                  <Icon name="refresh" size={14} />
-                  {T.retry}
-                </button>
+          {/* ---------------- right: today, then biggest expenses ----------------
+              These two share one column, stacked, rather than sitting side by side as
+              separate grid columns. Both answer "what is happening lately" and both
+              are lists of transactions, so they belong in one reading column; three
+              equal columns also squeezed the period card — the one with the donut —
+              into a third of the width, which is what the ring needs least. */}
+          <div className="sw-dash__stack">
+            <section className="card sw-dash__col" aria-labelledby="sw-dash-today">
+              <div className="sw-dash__colhead">
+                <h2 className="card-title" id="sw-dash-today">
+                  {T.today}
+                </h2>
+                <p className="muted sw-dash__subhead">{dateHeadingZh(summary.todayDate, dateFormat)}</p>
               </div>
-            ) : !todayPage ? (
-              <ListSkeleton rows={3} />
-            ) : todayPage.items.length === 0 ? (
-              <div className="empty-state sw-dash__empty">
-                <p>今天还没有记录。</p>
-              </div>
-            ) : (
-              <ul className="sw-dash__txns">
-                {todayPage.items.map((row) => (
-                  <TodayTransactionRow key={row.id} row={row} onOpen={showTransactionDetail} />
-                ))}
-              </ul>
-            )}
-          </section>
 
-          {/* ---------------- right: biggest expenses ---------------- */}
-          <section className="card sw-dash__col sw-dash__right" aria-labelledby="sw-dash-biggest">
-            <div className="sw-dash__colhead">
-              <h2 className="card-title" id="sw-dash-biggest">
-                支出排行
-              </h2>
-              <p className="muted sw-dash__subhead">金额从高到低 · {shown.label}</p>
-            </div>
+              <dl className="sw-dash__figures sw-dash__figures--compact">
+                <Figure
+                  label={T.income}
+                  value={<Money minor={summary.today.income} currency={summary.today.currency} />}
+                  tone="text-income"
+                />
+                <Figure
+                  label={T.expense}
+                  value={<Money minor={summary.today.expense} currency={summary.today.currency} />}
+                  tone="text-expense"
+                />
+                <Figure
+                  label={T.net}
+                  value={<Money minor={summary.today.net} currency={summary.today.currency} signed />}
+                  tone={summary.today.net >= 0 ? 'text-income' : 'text-expense'}
+                />
+              </dl>
 
-            {biggestState.error && !biggest ? (
-              <div className="sw-dash__inline-error" role="alert">
-                <p className="muted">{biggestState.error}</p>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={biggestState.reload}>
-                  <Icon name="refresh" size={14} />
-                  {T.retry}
-                </button>
-              </div>
-            ) : !biggest ? (
-              <ListSkeleton rows={4} />
-            ) : biggest.length === 0 ? (
-              <div className="empty-state sw-dash__empty">
-                <p>本周期还没有支出记录。</p>
-              </div>
-            ) : (
-              <ol className="sw-dash__biggest">
-                {biggest.map((item) => (
-                  <BiggestExpenseRow
-                    key={item.id}
-                    item={item}
-                    dateFormat={dateFormat}
-                    displayCurrency={displayCurrency}
-                    onOpen={showTransactionDetail}
-                  />
-                ))}
-              </ol>
-            )}
+              {todayState.error && !todayPage ? (
+                <div className="sw-dash__inline-error" role="alert">
+                  <p className="muted">{todayState.error}</p>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={todayState.reload}>
+                    <Icon name="refresh" size={14} />
+                    {T.retry}
+                  </button>
+                </div>
+              ) : !todayPage ? (
+                <ListSkeleton rows={3} />
+              ) : todayPage.items.length === 0 ? (
+                <div className="empty-state sw-dash__empty">
+                  <p>今天还没有记录。</p>
+                </div>
+              ) : (
+                <ul className="sw-dash__txns">
+                  {todayPage.items.map((row) => (
+                    <TodayTransactionRow key={row.id} row={row} onOpen={showTransactionDetail} />
+                  ))}
+                </ul>
+              )}
+            </section>
 
-            <div className="sw-dash__colfoot">
-              <Link className="btn btn-ghost btn-sm" to="/biggest-expenses" aria-label="查看全部支出排行">
-                {T.viewAll}
-                <Icon name="arrow-right" size={14} />
-              </Link>
-            </div>
-          </section>
+            {/* ---------------- below today: biggest expenses ---------------- */}
+            <section className="card sw-dash__col" aria-labelledby="sw-dash-biggest">
+              <div className="sw-dash__colhead">
+                <h2 className="card-title" id="sw-dash-biggest">
+                  支出排行
+                </h2>
+                <p className="muted sw-dash__subhead">金额从高到低 · {shown.label}</p>
+              </div>
+
+              {biggestState.error && !biggest ? (
+                <div className="sw-dash__inline-error" role="alert">
+                  <p className="muted">{biggestState.error}</p>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={biggestState.reload}>
+                    <Icon name="refresh" size={14} />
+                    {T.retry}
+                  </button>
+                </div>
+              ) : !biggest ? (
+                <ListSkeleton rows={4} />
+              ) : biggest.length === 0 ? (
+                <div className="empty-state sw-dash__empty">
+                  <p>本周期还没有支出记录。</p>
+                </div>
+              ) : (
+                <ol className="sw-dash__biggest">
+                  {biggest.map((item) => (
+                    <BiggestExpenseRow
+                      key={item.id}
+                      item={item}
+                      dateFormat={dateFormat}
+                      displayCurrency={displayCurrency}
+                      onOpen={showTransactionDetail}
+                    />
+                  ))}
+                </ol>
+              )}
+
+              <div className="sw-dash__colfoot">
+                <Link className="btn btn-ghost btn-sm" to="/biggest-expenses" aria-label="查看全部支出排行">
+                  {T.viewAll}
+                  <Icon name="arrow-right" size={14} />
+                </Link>
+              </div>
+            </section>
+          </div>
         </div>
       )}
 
@@ -886,11 +893,16 @@ function ListSkeleton({ rows }: { rows: number }): JSX.Element {
 }
 
 function DashboardSkeleton(): JSX.Element {
+  // Mirrors the real grid: one tall card on the left, two stacked on the right. A
+  // skeleton whose shape differs from the content it precedes makes the page jump
+  // on load, which reads as a glitch.
   return (
     <div className="sw-dash" aria-busy="true">
       <div className="card skeleton" style={{ height: 420 }} />
-      <div className="card skeleton" style={{ height: 300 }} />
-      <div className="card skeleton" style={{ height: 300 }} />
+      <div className="sw-dash__stack">
+        <div className="card skeleton" style={{ height: 240 }} />
+        <div className="card skeleton" style={{ height: 300 }} />
+      </div>
     </div>
   )
 }
@@ -998,15 +1010,19 @@ function BiggestExpenseRow({
 
 const DASHBOARD_STYLES = `
 .sw-dash__topbar { display: flex; justify-content: flex-end; margin-bottom: var(--space-4); }
+/* Two columns: the period on the left, everything list-shaped on the right.
+   Three equal columns used to squeeze the donut card into a third of the window,
+   which is the one element that needs the width; and 今天 / 支出排行 are both
+   transaction lists, so they read better stacked in a single column. */
 .sw-dash {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 3fr) minmax(0, 3fr);
+  grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
   gap: var(--space-4);
   align-items: start;
 }
-@media (max-width: 1439px) { .sw-dash { grid-template-columns: minmax(0, 5fr) minmax(0, 4fr); } .sw-dash__right { display: none; } }
-@media (max-width: 1099px) { .sw-dash { grid-template-columns: minmax(0, 1fr); } .sw-dash__right { display: flex; } }
+@media (max-width: 1099px) { .sw-dash { grid-template-columns: minmax(0, 1fr); } }
 .sw-dash__col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.sw-dash__stack { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 .sw-dash__left { grid-row: span 1; }
 .sw-dash__monthbar { display: flex; align-items: center; gap: var(--space-2); }
 .sw-dash__period { flex: 1; text-align: center; min-width: 0; }
