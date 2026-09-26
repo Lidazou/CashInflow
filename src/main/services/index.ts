@@ -129,7 +129,7 @@ export class Services {
    * the two halves of every report.
    *
    * Returns whether the category was CREATED, because a caller cannot work that
-   * out afterwards 鈥?by then the row it just inserted exists and looks
+   * out afterwards —by then the row it just inserted exists and looks
    * pre-existing.
    */
   private resolveCategoryId(

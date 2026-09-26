@@ -301,4 +301,98 @@ export function customRangeLabel(from: string, to: string): string {
   return `${formatDate(from, 'DD MMM YYYY')} – ${formatDate(to, 'DD MMM YYYY')}`
 }
 
+// ---------------------------------------------------------------------------
+// The dashboard's switchable reporting period
+// ---------------------------------------------------------------------------
+
+/** Month key one month away from `key`, e.g. shiftMonthKey('2026-01', -1) = '2025-12'. */
+export function shiftMonthKey(key: string, delta: number): string {
+  return addMonths(`${key}-01`, delta).slice(0, 7)
+}
+
+/**
+ * Step the dashboard's selected month for the given mode.
+ *
+ * Cycles are resolved from the KEY rather than from a day inside the month.
+ * `shiftCycle` starts by finding the cycle containing its reference, so passing
+ * '2026-09-01' with an anchor of 5 would silently resolve the PREVIOUS cycle
+ * (5 Aug - 4 Sep) and step to 2026-09 instead of 2026-10 — one press would do
+ * nothing and the next would jump two. `cycleFromKey` names the cycle by its
+ * start month, which is exactly the key the dashboard holds.
+ *
+ * Custom ranges are absolute rather than anchored to a month, so stepping
+ * translates the whole window by whole months instead of re-deriving it. That
+ * keeps "next period" meaning "the same window, later"; moving only the anchor
+ * would silently change the window's length.
+ */
+export function shiftDashboardMonth(
+  mode: 'natural' | 'cycle' | 'custom',
+  cycleKey: string,
+  cycleStartDay: number,
+  delta: number,
+  range?: { from: string; to: string } | null
+): { key: string; range: { from: string; to: string } | null } {
+  if (mode === 'custom' && range) {
+    return {
+      key: cycleKey,
+      range: { from: addMonths(range.from, delta), to: addMonths(range.to, delta) }
+    }
+  }
+  const anchorDay = mode === 'natural' ? 1 : cycleStartDay
+  const current = cycleFromKey(cycleKey, anchorDay)
+  return { key: shiftCycle(current.start, anchorDay, delta).key, range: null }
+}
+
+/**
+ * The dashboard's period, resolved for display or for a request.
+ *
+ * One function for both so the header and the figures can never describe
+ * different windows: the label is derived from the same `start`/`end` that the
+ * query used, rather than being computed separately in the component.
+ */
+export function dashboardPeriod(
+  mode: 'natural' | 'cycle' | 'custom',
+  cycleKey: string,
+  cycleStartDay: number,
+  range: { from: string; to: string } | null | undefined,
+  asOf: DateString = today()
+): {
+  start: DateString
+  end: DateString
+  label: string
+  startDay: number | null
+  daysTotal: number
+  daysRemaining: number
+} {
+  if (mode === 'custom' && range) {
+    const daysTotal = daySpan(range.from, range.to)
+    const daysRemaining = range.to < asOf ? 0 : daySpan(asOf < range.from ? range.from : asOf, range.to)
+    return {
+      start: range.from,
+      end: range.to,
+      label: customRangeLabel(range.from, range.to),
+      startDay: null,
+      daysTotal,
+      daysRemaining
+    }
+  }
+  const cycle = cycleFromKey(cycleKey, mode === 'natural' ? 1 : cycleStartDay)
+  return {
+    start: cycle.start,
+    end: cycle.end,
+    label: cycle.label,
+    startDay: cycle.startDay,
+    daysTotal: cycleLength(cycle),
+    daysRemaining: daysRemaining(cycle, asOf)
+  }
+}
+
+/** Inclusive day count between two local dates. */
+function daySpan(from: DateString, to: DateString): number {
+  const start = Date.parse(`${from}T00:00:00Z`)
+  const end = Date.parse(`${to}T00:00:00Z`)
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return 0
+  return Math.round((end - start) / 86_400_000) + 1
+}
+
 export { formatMonthLabel }

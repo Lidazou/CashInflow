@@ -4,7 +4,7 @@ import { openDatabase } from '@main/database/connection'
 import { Services } from '@main/services'
 
 /**
- * Manual verification helper 鈥?NOT part of the normal test suite.
+ * Manual verification helper —NOT part of the normal test suite.
  *
  * Seeds the demo dataset into the real application database so the running app
  * can be inspected with realistic data. It writes to the live userData path, so

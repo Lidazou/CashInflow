@@ -15,6 +15,8 @@ import type {
   BillingCycle,
   Budget,
   BudgetProgress,
+  DashboardPeriodMode,
+  DashboardRange,
   DateFormat,
   RecurrenceFrequency,
   RecurringRule,
@@ -42,6 +44,39 @@ import {
 
 const DATE_FORMATS: readonly DateFormat[] = ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD', 'DD MMM YYYY']
 const THEMES: readonly ThemeMode[] = ['light', 'dark', 'system']
+const PERIOD_MODES: readonly DashboardPeriodMode[] = ['natural', 'cycle', 'custom']
+
+/**
+ * Parse the stored custom dashboard window.
+ *
+ * Returns null for anything malformed rather than throwing or repairing: the
+ * caller then falls back to a cycle, which is always computable. A range that
+ * cannot be trusted must never reach a query, because a wrong FROM/TO pair still
+ * returns plausible-looking numbers.
+ */
+function parseDashboardRange(value: string | undefined): DashboardRange | null {
+  if (!value) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+  const candidate = parsed as Partial<DashboardRange>
+  const from = typeof candidate.from === 'string' ? candidate.from : ''
+  const to = typeof candidate.to === 'string' ? candidate.to : ''
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return null
+  return {
+    from,
+    to,
+    label: typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label : null,
+    budgetAmount:
+      typeof candidate.budgetAmount === 'number' && Number.isFinite(candidate.budgetAmount)
+        ? Math.trunc(candidate.budgetAmount)
+        : null
+  }
+}
 
 /** Empty string is how a cleared nullable setting is stored. */
 function nullIfEmpty(value: string | undefined): string | null {
@@ -98,7 +133,14 @@ export class SettingsService {
       // cannot produce a 31-day cycle that changes length between months.
       cycleStartDay: clampCycleStartDay(cycleStartDay ? Number(cycleStartDay) : 1),
       showOriginalCurrency: raw.get(SETTINGS_KEYS.showOriginalCurrency) !== 'false',
-      ratesAutoRefresh: raw.get(SETTINGS_KEYS.ratesAutoRefresh) !== 'false'
+      ratesAutoRefresh: raw.get(SETTINGS_KEYS.ratesAutoRefresh) !== 'false',
+      // 'cycle' is the default because it is a strict generalisation of a
+      // calendar month: with an anchor of 1 the two are identical, so a user who
+      // never opens the toggle still sees exactly what they expect.
+      dashboardPeriodMode: PERIOD_MODES.includes(raw.get(SETTINGS_KEYS.dashboardPeriodMode) as DashboardPeriodMode)
+        ? (raw.get(SETTINGS_KEYS.dashboardPeriodMode) as DashboardPeriodMode)
+        : 'cycle',
+      dashboardRange: parseDashboardRange(raw.get(SETTINGS_KEYS.dashboardRange))
     }
   }
 
@@ -119,6 +161,29 @@ export class SettingsService {
     }
     if (patch.theme !== undefined && !THEMES.includes(patch.theme)) {
       errors.theme = '主题必须是浅色、深色或跟随系统。'
+    }
+    if (patch.dashboardPeriodMode !== undefined && !PERIOD_MODES.includes(patch.dashboardPeriodMode)) {
+      errors.dashboardPeriodMode = '统计周期只能是自然月、结算周期或自定义区间。'
+    }
+    if (patch.dashboardRange !== undefined && patch.dashboardRange !== null) {
+      const range = patch.dashboardRange
+      const malformed =
+        typeof range.from !== 'string' ||
+        typeof range.to !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(range.from) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(range.to)
+      if (malformed) {
+        errors.dashboardRange = '自定义区间的开始和结束日期格式不正确。'
+      } else if (range.from > range.to) {
+        errors.dashboardRange = '自定义区间的开始日期不能晚于结束日期。'
+      }
+    }
+    // Switching to custom WITHOUT supplying a window would leave the dashboard
+    // with nothing to report on, so it is refused here rather than silently
+    // falling back to a cycle and looking like the toggle did nothing.
+    if (patch.dashboardPeriodMode === 'custom' && patch.dashboardRange === undefined) {
+      const existing = parseDashboardRange(this.readRaw().get(SETTINGS_KEYS.dashboardRange))
+      if (!existing) errors.dashboardRange = '请先选择自定义区间的开始和结束日期。'
     }
     if (patch.cycleStartDay !== undefined) {
       if (!Number.isFinite(patch.cycleStartDay)) {
@@ -156,6 +221,17 @@ export class SettingsService {
       }
       if (patch.ratesAutoRefresh !== undefined) {
         set(SETTINGS_KEYS.ratesAutoRefresh, String(patch.ratesAutoRefresh))
+      }
+      if (patch.dashboardPeriodMode !== undefined) {
+        set(SETTINGS_KEYS.dashboardPeriodMode, patch.dashboardPeriodMode)
+      }
+      if (patch.dashboardRange !== undefined) {
+        // Empty string is how a cleared range is stored, matching `nullIfEmpty`
+        // above: the column is NOT NULL, and a sentinel keeps the read path simple.
+        set(
+          SETTINGS_KEYS.dashboardRange,
+          patch.dashboardRange === null ? '' : JSON.stringify(patch.dashboardRange)
+        )
       }
       if (patch.hasCompletedOnboarding !== undefined) {
         set(SETTINGS_KEYS.hasCompletedOnboarding, String(patch.hasCompletedOnboarding))

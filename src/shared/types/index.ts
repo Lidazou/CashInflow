@@ -323,6 +323,43 @@ export interface PeriodTotals {
   currency?: string
 }
 
+/**
+ * The reporting period a page is currently showing.
+ *
+ * TWO MODES, ONE SHAPE
+ * --------------------
+ * A settlement cycle and an arbitrary range answer the same question — "what
+ * happened between these two dates" — so the UI and most of the services treat
+ * them identically. Only the NAVIGATION differs, which is why the mode is carried
+ * explicitly instead of being inferred:
+ *
+ *   cycle  → paging is relative ("next period"), derived from the anchor day
+ *   custom → paging is absolute ("2026-09-01 to 2026-09-30"), typed by the user
+ *
+ * `startDay` is null for a custom range, because the flat 1-28 anchor has no
+ * meaning there. Code that needs the anchor must read it from settings.
+ */
+export interface PeriodContext {
+  start: string
+  end: string
+  /**
+   * A stable identifier for the period: a cycle key ('2026-09'), or a derived
+   * 'start..end' string for a custom range. Used for comparisons and labels.
+   */
+  key: string
+  /** Display label, e.g. '2026年9月' or '9月1日 – 9月30日'. */
+  label: string
+  mode: 'cycle' | 'custom'
+  /** Cycle anchor day, or null for a custom range. */
+  startDay: number | null
+  daysTotal: number
+  daysRemaining: number
+  /** Fraction of the period elapsed so far, 0-1. */
+  progress: number
+  /** True when the period ended before today. */
+  isPast: boolean
+}
+
 export interface DashboardSummary {
   /** Balance per currency, each also converted into the display currency. */
   balances: CurrencyBalance[]
@@ -330,7 +367,26 @@ export interface DashboardSummary {
   month: MultiCurrencyTotals
   /** Today's totals converted into the display currency. */
   today: MultiCurrencyTotals
-  /** The cycle being reported, e.g. '2026-09'. */
+  /** The reporting period actually used, in either mode. */
+  period: PeriodContext
+  /**
+   * The settlement cycle the period was derived from, when the mode is 'cycle'.
+   *
+   * Retained alongside `period` so existing consumers keep working unchanged. It
+   * is null for a custom range, where there is no cycle to describe — the UI must
+   * branch on `period.mode`, not on this field being present.
+   */
+  cycle: {
+    start: string
+    end: string
+    key: string
+    label: string
+    startDay: number
+    daysTotal: number
+    daysRemaining: number
+    progress: number
+  } | null
+  /** The cycle key. Empty string when the period is a custom range. */
   monthKey: string
   todayDate: string
   /** Currency that figures are converted into for display. */
@@ -350,18 +406,6 @@ export interface DashboardSummary {
    * total presented as a total is worse than no total.
    */
   netWorthInBaseCurrency: number | null
-  /** The active settlement cycle, so the UI can label the period precisely. */
-  cycle: {
-    start: string
-    end: string
-    key: string
-    label: string
-    startDay: number
-    daysTotal: number
-    daysRemaining: number
-    /** Fraction of the cycle elapsed, 0-1. */
-    progress: number
-  }
   /** Rate tables and freshness, so every converted figure can be explained. */
   rates: ExchangeRateInfo
 }
@@ -540,6 +584,20 @@ export interface TrendPoint {
 
 export type StatisticsGranularity = 'day' | 'week' | 'month' | 'year'
 
+/**
+ * An explicit reporting window, as sent over IPC.
+ *
+ * Deliberately its own type rather than reusing `CustomPeriod`: a saved period
+ * has an id, a budget and a label, while this is only the question "which dates
+ * are we reporting on". `label` is optional and, when absent, derived — so the
+ * dashboard can show a saved period's name instead of '9月1日 – 9月30日'.
+ */
+export interface IpcDateRange {
+  from: string
+  to: string
+  label?: string | null
+}
+
 export interface StatisticsResult {
   granularity: StatisticsGranularity
   from: string
@@ -602,6 +660,38 @@ export interface SearchResult {
 export type DateFormat = 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD' | 'DD MMM YYYY'
 export type ThemeMode = 'light' | 'dark' | 'system'
 
+/**
+ * Which period the dashboard reports on.
+ *
+ * Three modes rather than a boolean, because they answer different questions:
+ *
+ *   natural  a plain calendar month, whatever the saved cycle anchor is
+ *   cycle    the user's settlement cycle — allowance in on the 5th, so the
+ *            reporting month runs 5 Aug – 4 Sep
+ *   custom   explicit dates, for a question that has no monthly shape at all
+ *            ("how much of my semester grant is left?")
+ *
+ * `natural` exists so a user whose anchor is the 5th can still glance at a
+ * calendar month without editing their saved anchor. Making them change a
+ * setting to see a month would be the wrong trade.
+ */
+export type DashboardPeriodMode = 'natural' | 'cycle' | 'custom'
+
+/**
+ * The custom window the dashboard is showing, persisted so it survives a restart.
+ *
+ * `label` is kept here (unlike a bare date range) so that loading a saved period
+ * onto the dashboard keeps the name the user gave it rather than reverting to a
+ * generated one. `budgetAmount` carries the 输入总金额 figure through, because the
+ * dashboard shows the same "how much is left" line.
+ */
+export interface DashboardRange {
+  from: string
+  to: string
+  label?: string | null
+  budgetAmount?: number | null
+}
+
 export interface AppSettings {
   baseCurrency: string
   startOfWeek: 0 | 1
@@ -628,6 +718,16 @@ export interface AppSettings {
   showOriginalCurrency: boolean
   /** Whether to refresh rates automatically when they age out. */
   ratesAutoRefresh: boolean
+  /**
+   * Which period the dashboard reports on, remembered across restarts.
+   *
+   * Persisted rather than kept in component state because it is a reporting
+   * preference, and a user who works in settlement cycles should not have to
+   * reselect that every time they open the app.
+   */
+  dashboardPeriodMode: DashboardPeriodMode
+  /** The window used when `dashboardPeriodMode` is 'custom'. */
+  dashboardRange: DashboardRange | null
 }
 
 // ---------------------------------------------------------------------------

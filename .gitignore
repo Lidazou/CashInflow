@@ -10,12 +10,17 @@ release/
 # Local npm cache (kept inside the workspace by .npmrc)
 .npm-cache/
 
-# Screenshot harness.
+# Screenshot and documentation tooling.
 #
-# Used to regenerate docs/images/*.png from a running app. Kept out of the
-# repository because it is a one-off maintenance tool, not part of the product or
-# its build.
+# Ignored by default because most of what lands here is one-off scratch work
+# (ad-hoc CDP setup snippets, verification probes). The four scripts the README
+# tells a reader to run are un-ignored below, so "the screenshots are
+# reproducible" is a claim the repository can actually back up.
 tools/
+!tools/shots.cjs
+!tools/shot.cjs
+!tools/make-diagram.ps1
+!tools/bom-ps1.cjs
 
 # Ad-hoc verification artefacts
 shot-*.png

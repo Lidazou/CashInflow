@@ -6,12 +6,12 @@
  * expose the bridge) and by the renderer (for types), so the three can never
  * drift apart.
  *
- * SECURITY MODEL (spec 搂5, 搂39)
+ * SECURITY MODEL (spec §5, §39)
  * ----------------------------
  * The renderer has no Node access, no filesystem access and no SQL. It can only
  * invoke a channel named in `IPC_CHANNELS`, and every argument crosses a
  * structured-clone boundary where it is validated again in the main process.
- * SQL text is never sent over the bridge 鈥?only data 鈥?so there is no path by
+ * SQL text is never sent over the bridge —only data —so there is no path by
  * which renderer code can influence a query's shape.
  *
  * All handlers resolve to `IpcResult<T>` rather than rejecting, because an
@@ -43,6 +43,7 @@ import type {
   ImportCommitResult,
   ImportPreview,
   ImportPresetId,
+  IpcDateRange,
   MultiCurrencyTotals,
   RecurringRule,
   RecurringRuleInput,
@@ -105,6 +106,7 @@ export const IPC_CHANNELS = {
   dashboardSummary: 'dashboard:summary',
   statsBiggestExpenses: 'stats:biggestExpenses',
   statsStatistics: 'stats:statistics',
+  statsRange: 'stats:range',
   statsCalendar: 'stats:calendar',
   statsDayTotals: 'stats:dayTotals',
   statsMonths: 'stats:months',
@@ -173,7 +175,7 @@ export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
  * Maps each channel to its argument tuple and resolved data type.
  *
  * `args` is a tuple so a handler with two parameters cannot be called with one,
- * and `result` is the unwrapped payload 鈥?the `IpcResult` envelope is applied
+ * and `result` is the unwrapped payload —the `IpcResult` envelope is applied
  * uniformly by the bridge, so callers see either `data` or a thrown AppError
  * reconstructed on the renderer side.
  */
@@ -223,14 +225,34 @@ export interface IpcContract {
   [IPC_CHANNELS.transactionsSearch]: { args: [query: TransactionQuery]; result: SearchResult }
 
   /**
-   * The display currency and cycle anchor are read from settings inside the main
-   * process rather than passed from the renderer, so a figure can never be
-   * computed in one currency and formatted in another.
+   * The display currency is read from settings inside the main process rather
+   * than passed from the renderer, so a figure can never be computed in one
+   * currency and formatted in another.
+   *
+   * `cycleStartDay` IS passed, because the dashboard lets the user pick which
+   * period they are looking at. It is a reporting choice, not a stored
+   * preference: viewing a calendar month while the saved cycle anchor stays at 5
+   * must not rewrite the user's setting.
    */
-  [IPC_CHANNELS.dashboardSummary]: { args: [cycleKey: string]; result: DashboardSummary }
-  [IPC_CHANNELS.statsBiggestExpenses]: { args: [cycleKey: string, limit?: number]; result: BiggestExpense[] }
+  [IPC_CHANNELS.dashboardSummary]: {
+    args: [cycleKey: string, range?: IpcDateRange | null, cycleStartDay?: number]
+    result: DashboardSummary
+  }
+  [IPC_CHANNELS.statsBiggestExpenses]: {
+    args: [cycleKey: string, limit?: number, range?: IpcDateRange | null]
+    result: BiggestExpense[]
+  }
   [IPC_CHANNELS.statsStatistics]: {
     args: [granularity: StatisticsGranularity, anchor: string]
+    result: StatisticsResult
+  }
+  /**
+   * Statistics over explicit dates. Separate from `statsStatistics` rather than
+   * an optional argument on it, because the granularity anchor and a concrete
+   * range are alternatives, not layers.
+   */
+  [IPC_CHANNELS.statsRange]: {
+    args: [from: string, to: string]
     result: StatisticsResult
   }
   [IPC_CHANNELS.statsCalendar]: { args: [monthKey: string]; result: CalendarMonth }
@@ -354,9 +376,18 @@ export interface CashInflowApi {
   transactionsSearch: (query: TransactionQuery) => Promise<SearchResult>
 
   // --- dashboard & statistics -------------------------------------------
-  dashboardSummary: (cycleKey: string) => Promise<DashboardSummary>
-  statsBiggestExpenses: (cycleKey: string, limit?: number) => Promise<BiggestExpense[]>
+  dashboardSummary: (
+    cycleKey: string,
+    range?: IpcDateRange | null,
+    cycleStartDay?: number
+  ) => Promise<DashboardSummary>
+  statsBiggestExpenses: (
+    cycleKey: string,
+    limit?: number,
+    range?: IpcDateRange | null
+  ) => Promise<BiggestExpense[]>
   statsStatistics: (granularity: StatisticsGranularity, anchor: string) => Promise<StatisticsResult>
+  statsRange: (from: string, to: string) => Promise<StatisticsResult>
   statsCalendar: (monthKey: string) => Promise<CalendarMonth>
   statsDayTotals: (date: string) => Promise<MultiCurrencyTotals>
   statsMonths: () => Promise<string[]>
@@ -435,8 +466,8 @@ export interface CashInflowApi {
  * `IpcContract` is keyed by channel string ('accounts:list') while `CashInflowApi`
  * is keyed by bridge method name ('accountsList'). Both are written by hand, so
  * this asserts that every channel declared in `IPC_CHANNELS` has a corresponding
- * bridge method 鈥?forgetting to expose a newly declared channel becomes a
- * compile error instead of a runtime "No response from the application".
+ * bridge method. Forgetting to expose a newly declared channel becomes a compile
+ * error instead of a runtime "No response from the application".
  *
  * The event channel is excluded: it is pushed from main to renderer and is
  * deliberately not an invocable request.

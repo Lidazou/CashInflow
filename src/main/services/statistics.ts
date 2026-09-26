@@ -34,6 +34,7 @@ import {
   today
 } from '@shared/lib/dates'
 import {
+  customRangeLabel,
   cycleFor,
   cycleFromKey,
   cycleLength,
@@ -50,6 +51,22 @@ import {
   readBalancesWithConversion,
   readCategoryBreakdown
 } from './currency-aggregate'
+
+/**
+ * Inclusive day count for `from`..`to`.
+ *
+ * Both ends count as days that happened — a one-day period is 1, not 0 — because
+ * this number is shown to the user as "本周期共 N 天" and then used as a progress
+ * denominator. Dates are parsed as UTC midnight rather than via `new Date(str)`,
+ * which would read 'YYYY-MM-DD' as UTC and then shift it by the local offset,
+ * making the count depend on the machine's timezone.
+ */
+function daysInRange(from: string, to: string): number {
+  const start = Date.parse(`${from}T00:00:00Z`)
+  const end = Date.parse(`${to}T00:00:00Z`)
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return 0
+  return Math.round((end - start) / 86_400_000) + 1
+}
 
 /**
  * Dashboard statistics, the statistics page, and custom periods.
@@ -93,47 +110,79 @@ export class StatisticsService {
   /**
    * Everything the home screen needs, in one round trip.
    *
-   * `cycleKey` identifies the period, `displayCurrency` is the unit every figure
-   * is converted into, and `cycleStartDay` defines where periods begin.
+   * THE PERIOD CAN BE A CYCLE OR AN ARBITRARY RANGE
+   * ----------------------------------------------
+   * `cycleKey` drives the default, settlement-cycle reporting. Pass `range` to
+   * report over explicit dates instead — that is what lets the dashboard show a
+   * custom period, so a one-off question ("how is this semester going?") does not
+   * have to be answered on a separate page from the totals that matter.
+   *
+   * The two modes share every downstream computation; only the period resolution
+   * and the label differ. `period.mode` tells the UI which navigation to offer.
    */
   dashboard(
     cycleKey: string,
     displayCurrency: string,
     cycleStartDay: number,
     day: string = today(),
-    baseCurrency: string = displayCurrency
+    baseCurrency: string = displayCurrency,
+    range?: { from: string; to: string; label?: string | null } | null
   ): DashboardSummary {
     const rates = this.rates()
-    const cycle = cycleFromKey(cycleKey, cycleStartDay)
+
+    const custom = range && range.from && range.to && range.from <= range.to ? range : null
+    const cycle = custom ? null : cycleFromKey(cycleKey, cycleStartDay)
+
+    const start = custom ? custom.from : cycle!.start
+    const end = custom ? custom.to : cycle!.end
 
     const { balances, convertedTotal } = readBalancesWithConversion(this.db, displayCurrency, rates)
-    const month = aggregateTotals(this.db, cycle.start, cycle.end, displayCurrency, rates).totals
+    const month = aggregateTotals(this.db, start, end, displayCurrency, rates).totals
     const todayTotals = aggregateTotals(this.db, day, day, displayCurrency, rates).totals
 
     const accountCount = (
       this.db.prepare('SELECT COUNT(*) AS n FROM accounts WHERE archived = 0').get() as { n: number }
     ).n
 
+    const daysTotal = daysInRange(start, end)
+    const elapsed = custom
+      ? Math.min(Math.max(daysInRange(start, day), 0), daysTotal)
+      : daysTotal - daysRemaining(cycle!, day)
+
     return {
       balances,
       month,
       today: todayTotals,
-      monthKey: cycle.key,
+      period: {
+        start,
+        end,
+        key: custom ? `${start}..${end}` : cycle!.key,
+        label: custom ? (custom.label?.trim() || customRangeLabel(start, end)) : cycle!.label,
+        mode: custom ? 'custom' : 'cycle',
+        startDay: custom ? null : cycle!.startDay,
+        daysTotal,
+        daysRemaining: custom ? Math.max(daysTotal - elapsed, 0) : daysRemaining(cycle!, day),
+        progress: daysTotal > 0 ? Math.min(Math.max(elapsed / daysTotal, 0), 1) : 0,
+        isPast: end < day
+      },
+      cycle: cycle
+        ? {
+            start: cycle.start,
+            end: cycle.end,
+            key: cycle.key,
+            label: cycle.label,
+            startDay: cycle.startDay,
+            daysTotal: cycleLength(cycle),
+            daysRemaining: daysRemaining(cycle, day),
+            progress: cycleProgress(cycle, day)
+          }
+        : null,
+      monthKey: cycle ? cycle.key : '',
       todayDate: day,
       displayCurrency,
       baseCurrency,
       accountCount,
       netWorthInBaseCurrency: convertedTotal,
-      cycle: {
-        start: cycle.start,
-        end: cycle.end,
-        key: cycle.key,
-        label: cycle.label,
-        startDay: cycle.startDay,
-        daysTotal: cycleLength(cycle),
-        daysRemaining: daysRemaining(cycle, day),
-        progress: cycleProgress(cycle, day)
-      },
       rates: this.rateInfo(displayCurrency)
     }
   }
@@ -183,13 +232,19 @@ export class StatisticsService {
    * the display currency before sorting. Sorting on raw minor units would rank
    * ¥50 (5000 fen) above RM 100 (10000 sen) purely because 5000 < 10000 — a
    * comparison between two different units, which is not a comparison at all.
+   *
+   * Pass `range` to rank over explicit dates rather than a settlement cycle, so
+   * the dashboard's biggest-expense column follows the same period as its totals.
    */
   biggestExpenses(
     cycleKey: string,
     cycleStartDay: number,
     displayCurrency: string,
-    limit = 5
+    limit = 5,
+    range?: { from: string; to: string } | null
   ): BiggestExpense[] {
+    const custom = range && range.from && range.to && range.from <= range.to ? range : null
+    if (custom) return this.biggestExpensesInRange(custom.from, custom.to, displayCurrency, limit)
     const cycle = cycleFromKey(cycleKey, cycleStartDay)
     return this.biggestExpensesInRange(cycle.start, cycle.end, displayCurrency, limit)
   }
@@ -292,6 +347,29 @@ export class StatisticsService {
       to,
       totals: aggregateTotals(this.db, from, to, displayCurrency, rates).totals,
       trend: this.trend(granularity, from, to, displayCurrency),
+      categories: readCategoryBreakdown(this.db, from, to, displayCurrency, rates),
+      topExpenses: this.biggestExpensesInRange(from, to, displayCurrency, 10),
+      currency: displayCurrency
+    }
+  }
+
+  /**
+   * The same payload as `statistics`, resolved from explicit dates.
+   *
+   * The dashboard's category breakdown is the reason this exists: `statistics`
+   * resolves its window from a granularity plus an anchor, which cannot express
+   * '1 Sep to 14 Oct'. Returning the identical `StatisticsResult` shape means the
+   * donut and the trend chart need no special case for custom periods — they read
+   * the same fields they always did.
+   */
+  statisticsForRange(from: string, to: string, displayCurrency: string): StatisticsResult {
+    const rates = this.rates()
+    return {
+      granularity: 'day',
+      from,
+      to,
+      totals: aggregateTotals(this.db, from, to, displayCurrency, rates).totals,
+      trend: this.trend('day', from, to, displayCurrency),
       categories: readCategoryBreakdown(this.db, from, to, displayCurrency, rates),
       topExpenses: this.biggestExpensesInRange(from, to, displayCurrency, 10),
       currency: displayCurrency
@@ -486,8 +564,7 @@ export class StatisticsService {
     const { from, to } = input
 
     const totals = aggregateTotals(this.db, from, to, displayCurrency, rates).totals
-    const daysTotal =
-      Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1
+    const daysTotal = daysInRange(from, to)
 
     // Elapsed days are clamped to the range, so a future period reports zero
     // elapsed rather than a negative number that would corrupt the average.

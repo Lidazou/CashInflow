@@ -66,7 +66,19 @@ export const SETTINGS_KEYS = {
   /** Show the original amount alongside the converted one. */
   showOriginalCurrency: 'show_original_currency',
   /** Last time rates were successfully refreshed, for the staleness indicator. */
-  ratesAutoRefresh: 'rates_auto_refresh'
+  ratesAutoRefresh: 'rates_auto_refresh',
+  /**
+   * Which period the dashboard reports on: natural month, settlement cycle, or
+   * a custom window. Stored as a plain string so a future fourth mode is a code
+   * change rather than a schema change.
+   */
+  dashboardPeriodMode: 'dashboard_period_mode',
+  /**
+   * The custom window, as JSON. Stored as one key rather than four so a partly
+   * written range is impossible: either the whole range loads or none of it
+   * does, and a half-restored range would silently report the wrong dates.
+   */
+  dashboardRange: 'dashboard_range'
 } as const
 
 /** CSV column order for transaction export (spec §6). */

@@ -1,6 +1,6 @@
 # CashInflow
 
-**给中国留学生的本地记账本** · 多币种 · 实时汇率 · 按生活费周期结算
+**给中国留学生的本地记账本** · 多币种实时汇率 · 首页可切自然月 / 生活费周期 / 任意区间
 
 <p>
   <img alt="Electron" src="https://img.shields.io/badge/Electron-44-2B2E3A?logo=electron&logoColor=white">
@@ -8,7 +8,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white">
   <img alt="Release" src="https://img.shields.io/github/v/release/Lidazou/CashInflow?color=16A34A&label=release">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-204%20passing-16A34A">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-232%20passing-16A34A">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white">
 </p>
@@ -22,20 +22,47 @@
 一个运行在 Windows 上的个人记账软件。所有数据保存在你自己电脑的 SQLite 数据库里，
 不需要注册账号，不联网也能完整使用。
 
-它和普通记账 App 的区别在三个地方。
+它和普通记账 App 的区别在四个地方。
 
 ---
 
-### 1️⃣ 按你的生活费周期结算，而不是自然月
+### 1️⃣ 首页可以切换统计周期：自然月 / 结算周期 / 自定义区间
 
 **这是整个软件最核心的设计。**
+
+大多数记账软件的首页只会告诉你「本月」——而「本月」到底是哪一个月，是软件替你决定的。
+
+CashInflow 把它交给你：
+
+![三种统计周期](docs/images/period-modes.png)
+
+| 模式 | 统计哪一段 | 什么时候用 |
+|---|---|---|
+| **自然月** | 1 日 → 月末 | 对账、报销、和家里核对账单 |
+| **结算周期** | 你设定的起始日 → 下个月的前一天 | 生活费 5 号到账？那就是 8月5日 – 9月4日 |
+| **自定义区间** | 你选的任意起止日期 | 一个学期、一趟旅行、两次兼职之间 |
+
+**三种模式共用同一块首页**——同一个圆环、同一组收入/支出/结余、同一个支出排行。
+切换周期只是换一个问题，不是换一个页面。
+
+首页点一下就能切：
+
+| 自然月 | 结算周期 | 自定义区间 |
+|---|---|---|
+| ![自然月](docs/images/dashboard-natural.png) | ![结算周期](docs/images/dashboard.png) | ![自定义区间](docs/images/dashboard-custom.png) |
+
+> **为什么不是简单地把自然月改成「起始日 = 1」？**
+>
+> 因为那样的话，想看一眼日历月就得先改设置、再改回来。
+> 现在的做法是：**「自然月」只是这一次请求的起始日**，你保存的结算起始日不会被改写。
+> 切换模式会记住，下次打开还是你上次看的那一段。
+
+#### 生活费周期：为什么最多只能设到 28 日
 
 如果你每月 5 号收到家里打的生活费，那么「本月」对你来说其实是 **8月5日 – 9月4日**。
 
 用自然月统计会怎样？9 月 3 日打开 App，它告诉你「本月支出 ¥0」——你确实还没开始花这个月的钱。
 但真实情况是你正处在上一周期的末尾，钱快花完了。
-
-CashInflow 让你把周期起点设成任意一天（1–28 日）：
 
 ```
 设置起始日 = 5
@@ -45,11 +72,27 @@ CashInflow 让你把周期起点设成任意一天（1–28 日）：
    └── 周期 A ──┘└── 周期 B ──┘
 ```
 
-首页圆环、「今天」、统计、预算全部跟着这个周期走。
-
 > **为什么最多只能设到 28 日？** 设成 31 日的话，2 月没有 31 号，周期长度会在
 > 28–31 天之间变化，同一笔交易可能落进不同周期。上限 28 保证每个周期长度
 > 都是一个月。设置界面里也写明了这一点。
+
+#### 自定义区间：输入总金额，看会不会超支
+
+任意起止日期，外加一个「这段日子一共带了多少钱」：
+
+```
+区间支出 / 总金额           ¥ 4,731.29 / ¥ 5,000.00
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+剩余 ¥268.71     日均支出 ¥175.23     已过 27 / 30 天
+                                       按此速度预计 ¥5,256.90
+                                       按当前速度会超出总金额
+```
+
+重点是最后那行——**按当前速度会不会超支**，这才是「还能撑多久」的答案。
+首页显示这个区间的收支，点「区间详情与预算推算」进入完整页面：
+
+![自定义区间](docs/images/custom-period.png)
 
 ---
 
@@ -84,6 +127,19 @@ CashInflow 让你把周期起点设成任意一天（1–28 日）：
 
 ![记一笔](docs/images/add-transaction.png)
 
+### 4️⃣ 算错的代价是「你照着错的数字做了决定」
+
+金融软件出错的代价不是「不好看」。所以下面这些不是泛泛的「最佳实践」，而是
+具体防住了某类真实 bug 的做法——完整清单见 [优势：数据正确性](#优势数据正确性)：
+
+```
+金额      一律用整数存最小单位（分/仙），不用小数
+跨币种    先按币种分组求和，再统一换算，全程只舍入一次
+汇率缺失  按原币显示并标注，绝不当成 1:1
+转账      写两行并共享一个 transfer_id，从结构上被排除出收支
+余额      由账本推导，绝不落库
+```
+
 ---
 
 ## 功能截图
@@ -93,25 +149,6 @@ CashInflow 让你把周期起点设成任意一天（1–28 日）：
 日 / 周 / 月 / 年四种粒度，折线趋势 + 分类构成，下面是日历视图，点任意一天看当天明细。
 
 ![统计分析](docs/images/statistics.png)
-
-### 自定义区间统计：任意时间段 + 输入总金额
-
-不一定是自然月，也不一定是生活费周期。**随便选一段时间，输入总金额，看还能撑多久。**
-
-比如「这个学期我带了 ¥5,000」：
-
-```
-区间支出 / 总金额           ¥ 4,731.29 / ¥ 5,000.00
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-剩余 ¥268.71     日均支出 ¥175.23     已过 27 / 30 天
-                                       按此速度预计 ¥5,256.90
-                                       按当前速度会超出总金额
-```
-
-重点是最后那行——**按当前速度会不会超支**，这才是「还能撑多久」的答案。
-
-![自定义区间](docs/images/custom-period.png)
 
 ### 账户：多币种余额分开看
 
@@ -343,6 +380,29 @@ src/
     └── lib/i18n.ts          全部中文界面文案
 ```
 
+### 重新生成 README 里的截图
+
+截图不是手截的，`tools/` 下有一套可复现的脚本（该目录不参与打包）：
+
+```bash
+# 1. 用一次性配置目录启动，绝不碰你真实的账本
+electron . --remote-debugging-port=9222 --user-data-dir=%TEMP%\sw-shot-profile
+
+# 2. 一次连接跑完全部页面
+node tools/shots.cjs                 # 全部
+node tools/shots.cjs dashboard       # 只重拍某几张
+
+# 3. 示意图（三种统计周期）
+powershell -File tools/make-diagram.ps1
+```
+
+窗口宽度通过 `CASHINFLOW_WINDOW_WIDTH` / `CASHINFLOW_WINDOW_HEIGHT` 指定：
+首页三栏布局需要 1440 CSS 像素以上才会出现，所以截图必须开一个够宽的窗口。
+
+> `tools/make-diagram.ps1` 必须以 **UTF-8 BOM** 保存：Windows PowerShell 5.1 会把
+> 没有 BOM 的脚本当 ANSI 读，脚本里的中文字符串会变成乱码甚至语法错误。
+> `node tools/bom-ps1.cjs tools/make-diagram.ps1` 负责加 BOM。
+
 ---
 
 ## 测试
@@ -351,13 +411,14 @@ src/
 npm test
 ```
 
-**204 个用例，跑真实 SQLite 文件，不用 mock。**
+**232 个用例，跑真实 SQLite 文件，不用 mock。**
 
 | 测试文件 | 覆盖内容 |
 |---|---|
 | `money.test.ts` | 整数运算、解析、格式化，以及所规避的浮点失败模式 |
 | `rates.test.ts` | 换算舍入、交叉汇率、缺失汇率、新鲜度分级 |
 | `periods.test.ts` | 周期运算、**日历无缝铺满**、任意区间校验 |
+| `dashboard-period.test.ts` | **首页三种周期模式**：窗口解析、按周期取数、切换后设置不被改写 |
 | `multi-currency.test.ts` | 服务层跨币种聚合、周期感知预算、离线汇率回退 |
 | `ledger.test.ts` | schema 与迁移、余额、转账、校验、引用完整性、持久化 |
 | `import-parser.test.ts` | RFC 4180、分隔符嗅探、表头定位、日期金额归一化 |
@@ -399,6 +460,12 @@ Maybank → Cash RM500 后，两个账户余额之和不变，本期支出不变
 - 分类改名不会改写历史（交易引用的是分类 id）
 - **分类类型和有交易的账户币种都不能改**，因为会重新解释每一笔历史交易
 - 重复检测**只在同一账户内比对**，同一笔消费导入到两个账户不会被识别
+- **自定义区间的「今天」列和总余额不跟着变**：它们回答的是「现在有多少钱」，
+  把它塞进周期选择器里只会让人算错。只有圆环、收支、结余、支出排行跟周期走
+- **首页不会自动从已结束的周期跳回来**：切到 6 月就会停在 6 月（会标注「已结束」），
+  点「本月」回到当前周期
+- **自定义区间的起止日期只属于首页**：统计页、预算页仍然跟着你的结算周期走。
+  想让整个 App 换周期，去设置里改「每月起始日」
 
 **平台**
 
@@ -445,12 +512,15 @@ better-sqlite3 v13 基于 N-API，自带 win32-x64 预编译二进制。而 elec
 **A local-first, multi-currency personal finance manager for Windows**, built for
 Chinese students studying abroad.
 
-**Three things set it apart:**
+**Four things set it apart:**
 
-1. **Settlement cycles, not calendar months.** If your allowance arrives on the
-   5th, "this month" means 5 Aug – 4 Sep. Every figure — dashboard, statistics,
-   budget — follows the cycle you configure. A calendar month starting on the 3rd
-   reports that you have spent ¥0, which is both true and useless.
+1. **A switchable reporting period, on one dashboard.** Three modes share the same
+   ring, the same income/expense/net figures and the same biggest-expense list:
+   a plain calendar month, your own settlement cycle (allowance in on the 5th means
+   5 Aug – 4 Sep), or an arbitrary date range for a semester or a trip. Switching
+   changes the question, not the screen — and the choice is remembered. A calendar
+   month starting on the 3rd reports that you have spent ¥0, which is both true and
+   useless.
 
 2. **Real multi-currency.** Hold CNY, MYR, SGD, USD, HKD and more. Switch the
    display currency and every figure re-converts. Live rates come from three free
@@ -460,6 +530,10 @@ Chinese students studying abroad.
 3. **Statement import.** WeChat Pay, Alipay (GBK-encoded, 24-line preamble),
    Maybank, CIMB, and any generic CSV/XLSX, with duplicate detection that lets two
    genuine same-day purchases through while catching a re-import of the same file.
+
+4. **A semester budget, not just a month.** Point the dashboard at arbitrary dates,
+   enter what you brought with you, and see spend against it plus a pace projection
+   that answers the only question that matters: at this rate, will it last?
 
 **Correctness is the design goal, not a feature.** Amounts are integers in each
 currency's minor unit, balances are derived rather than stored, transfers are
@@ -471,7 +545,7 @@ rather than silently treated as 1:1.
 exchange-rate lookup; the renderer is forbidden from making any outbound
 connection by its Content-Security-Policy.
 
-**204 tests** run against a real SQLite file, including the specification's
+**232 tests** run against a real SQLite file, including the specification's
 acceptance criteria as executable tests.
 
 ---

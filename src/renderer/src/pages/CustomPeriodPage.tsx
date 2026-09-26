@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAppStore } from '@renderer/store/app'
 import { useRateStore } from '@renderer/store/rates'
 import { useAction, useAsync } from '@renderer/hooks/useData'
@@ -7,7 +8,7 @@ import { Money, ConversionNote } from '@renderer/components/Money'
 import { ProgressBar, LineChart, HorizontalBarChart } from '@renderer/components/charts'
 import { parseAmountToMinor, getCurrency } from '@shared/lib/money'
 import { addDays, today } from '@shared/lib/dates'
-import { CUSTOM_RANGE_PRESETS, validateCustomRange } from '@shared/lib/periods'
+import { CUSTOM_RANGE_PRESETS, PRESET_MAX_DAYS, validateCustomRange } from '@shared/lib/periods'
 import { categoryLabel, dateHeadingZh, currencyLabelZh } from '@shared/lib/i18n'
 import type { CustomPeriod, CustomPeriodStatistics } from '@shared/types'
 
@@ -41,14 +42,31 @@ export default function CustomPeriodPage(): React.JSX.Element {
     void loadRates()
   }, [loadRates])
 
+  /**
+   * The window, seeded from the dashboard when it linked here.
+   *
+   * The dashboard's period switcher has a 自定义区间 mode, and this page is the
+   * deep dive for the same question. Arriving with a different window than the one
+   * just being looked at would make the two screens disagree about what the user
+   * is asking, so an explicit `?from=&to=` wins over the default.
+   */
+  const [searchParams] = useSearchParams()
+  const linkedRange = useMemo(() => {
+    const from = searchParams.get('from')
+    const to = searchParams.get('to')
+    if (!from || !to) return null
+    if (validateCustomRange(from, to, PRESET_MAX_DAYS)) return null
+    return { from, to }
+  }, [searchParams])
+
   // Default to the last 30 days: the most common "non-standard period" ask, and
   // immediately meaningful rather than an empty form.
-  const [from, setFrom] = useState(() => addDays(today(), -29))
-  const [to, setTo] = useState(() => today())
+  const [from, setFrom] = useState(() => linkedRange?.from ?? addDays(today(), -29))
+  const [to, setTo] = useState(() => linkedRange?.to ?? today())
   const [budgetText, setBudgetText] = useState('')
   const [label, setLabel] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
-  const [activePreset, setActivePreset] = useState<string | null>('last30')
+  const [activePreset, setActivePreset] = useState<string | null>(linkedRange ? null : 'last30')
 
   const budgetMinor = useMemo(() => {
     if (budgetText.trim() === '') return null

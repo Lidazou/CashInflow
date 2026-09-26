@@ -22,6 +22,7 @@ import type {
   CustomPeriodInput,
   ImportCommitRequest,
   ImportPresetId,
+  IpcDateRange,
   RecurringRuleInput,
   StatisticsGranularity,
   SubscriptionInput,
@@ -30,12 +31,13 @@ import type {
   TransferInput
 } from '@shared/types'
 import { nowIso } from '@shared/lib/dates'
+import { clampCycleStartDay } from '@shared/lib/periods'
 import { SCHEMA_VERSION } from '@shared/constants'
 
 /**
  * IPC registration.
  *
- * SECURITY (spec 閹?, 閹?9)
+ * SECURITY (spec §7, §29)
  * ----------------------
  * Every channel registered here is explicitly listed in `IPC_CHANNELS`. There is
  * no generic "run this SQL" or "read this file" channel, so a compromised
@@ -279,26 +281,74 @@ export function registerIpcHandlers(context: IpcContext): void {
   // Dashboard, statistics, and the settlement cycle
   // -------------------------------------------------------------------------
 
-  handle<[string], unknown>(IPC_CHANNELS.dashboardSummary, context, {}, (cycleKey) => {
-    const { currency, cycleStartDay, baseCurrency } = displayContext()
-    return svc().statistics.dashboard(sanitiseMonthKey(cycleKey), currency, cycleStartDay, todayIso(), baseCurrency)
-  })
+  /**
+   * The dashboard accepts an explicit range and an explicit anchor day, so the
+   * user can switch between a calendar month, their settlement cycle and a custom
+   * window without any of those choices rewriting their saved settings.
+   *
+   * The anchor arrives as a number because the dashboard's "自然月" option means
+   * day 1 *for this request*. Persisting it would silently move the user's
+   * allowance cycle.
+   */
+  handle<[string, IpcDateRange | null | undefined, number | undefined], unknown>(
+    IPC_CHANNELS.dashboardSummary,
+    context,
+    {},
+    (cycleKey, range, anchorDay) => {
+      const { currency, cycleStartDay, baseCurrency } = displayContext()
+      const safeDay = clampCycleStartDay(
+        typeof anchorDay === 'number' && Number.isFinite(anchorDay) ? anchorDay : cycleStartDay
+      )
+      return svc().statistics.dashboard(
+        sanitiseMonthKey(cycleKey),
+        currency,
+        safeDay,
+        todayIso(),
+        baseCurrency,
+        sanitiseRange(range)
+      )
+    }
+  )
 
-  handle<[string, number?], unknown>(IPC_CHANNELS.statsBiggestExpenses, context, {}, (cycleKey, limit) => {
-    const { currency, cycleStartDay } = displayContext()
-    return svc().statistics.biggestExpenses(
-      sanitiseMonthKey(cycleKey),
-      cycleStartDay,
-      currency,
-      clampLimit(limit, 5, 200)
-    )
-  })
+  handle<[string, (number | undefined)?, (IpcDateRange | null | undefined)?], unknown>(
+    IPC_CHANNELS.statsBiggestExpenses,
+    context,
+    {},
+    (cycleKey, limit, range) => {
+      const { currency, cycleStartDay } = displayContext()
+      return svc().statistics.biggestExpenses(
+        sanitiseMonthKey(cycleKey),
+        cycleStartDay,
+        currency,
+        clampLimit(limit, 5, 200),
+        sanitiseRange(range)
+      )
+    }
+  )
 
   handle<[StatisticsGranularity, string], unknown>(IPC_CHANNELS.statsStatistics, context, {}, (granularity, anchor) => {
     const allowed: StatisticsGranularity[] = ['day', 'week', 'month', 'year']
     const safeGranularity = allowed.includes(granularity) ? granularity : 'month'
     const { currency, cycleStartDay } = displayContext()
     return svc().statistics.statistics(safeGranularity, sanitiseDate(anchor), currency, cycleStartDay)
+  })
+
+  /**
+   * Statistics over explicit dates, used by the dashboard's donut when the
+   * selected period is a custom window. The display currency still comes from
+   * settings, so the donut and the figures beside it cannot disagree.
+   */
+  handle<[string, string], unknown>(IPC_CHANNELS.statsRange, context, {}, (from, to) => {
+    const { currency } = displayContext()
+    const safeFrom = sanitiseDate(from)
+    const safeTo = sanitiseDate(to)
+    // A reversed range would return an empty period that reads as "no spending"
+    // rather than as an error, so the ends are ordered before querying.
+    return svc().statistics.statisticsForRange(
+      safeFrom <= safeTo ? safeFrom : safeTo,
+      safeFrom <= safeTo ? safeTo : safeFrom,
+      currency
+    )
   })
 
   handle<[string], unknown>(IPC_CHANNELS.statsCalendar, context, {}, (monthKey) => {
@@ -423,7 +473,7 @@ export function registerIpcHandlers(context: IpcContext): void {
     IPC_CHANNELS.customPeriodsDelete,
     context,
     { mutates: true, reason: 'customPeriods' },
-    (id) => svc().statistics.deleteCustomPeriod(assertId(id, '缁熻鍖洪棿 ID'))
+    (id) => svc().statistics.deleteCustomPeriod(assertId(id, '统计区间 ID'))
   )
 
   handle<[{ from: string; to: string; budgetAmount?: number | null; currency?: string }], unknown>(
@@ -755,6 +805,25 @@ function sanitiseDate(value: unknown): string {
 }
 
 /**
+ * Validate an optional reporting range arriving from the renderer.
+ *
+ * Returns null when the range is absent, malformed, or reversed. Null means "use
+ * the cycle", which the services already know how to do — so a bad range degrades
+ * to the default view instead of throwing and blanking the dashboard. A range
+ * whose ends are reversed is treated as absent rather than swapped, because a
+ * swapped range would report a period the user never asked for.
+ */
+function sanitiseRange(value: IpcDateRange | null | undefined): IpcDateRange | null {
+  if (!value || typeof value !== 'object') return null
+  const { from, to } = value
+  if (typeof from !== 'string' || typeof to !== 'string') return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return null
+  if (from > to) return null
+  const label = typeof value.label === 'string' && value.label.trim() ? value.label.trim().slice(0, 80) : null
+  return { from, to, label }
+}
+
+/**
  * Today as a local calendar date.
  *
  * Built from local parts rather than `toISOString().slice(0,10)`, which converts
@@ -782,7 +851,7 @@ function defaultDemoMonth(): string {
  * Ordering matters and is the whole point of this function:
  *   1. Validate the candidate by opening it read-only and checking its schema
  *      version. A file that is not a CashInflow database must be rejected BEFORE
- *      anything is replaced 闁?otherwise the user loses their data to a bad file.
+ *      anything is replaced — otherwise the user loses their data to a bad file.
  *   2. Snapshot the current database so the operation is recoverable.
  *   3. Close the live connection, swap the file, reopen.
  *

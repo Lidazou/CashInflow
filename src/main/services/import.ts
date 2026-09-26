@@ -71,7 +71,7 @@ import { mapImportBatch, type ImportBatchRow } from '@main/database/mappers'
  * race cannot slip a duplicate past a check-then-insert.
  *
  * The hash is computed ONCE at import and never recomputed when the user later
- * edits a merchant or category 鈥?recomputing would make an edited row look new
+ * edits a merchant or category —recomputing would make an edited row look new
  * and allow the next import to recreate it (Actual Budget bug #6678).
  */
 
@@ -500,7 +500,7 @@ export class ImportService {
     // --- status filtering -------------------------------------------------
     const status = cell('status')
     if (presetId === 'alipay' && status && ALIPAY_EXCLUDED_STATUS.some((value) => status.includes(value))) {
-      warnings.push(`Skipped because its status is "${status}" 鈥?the order was never settled.`)
+      warnings.push(`Skipped because its status is "${status}" —the order was never settled.`)
       // Mark as an error so it cannot be imported, but explain why.
       errors.push(`Order status "${status}" is not a completed transaction.`)
     }

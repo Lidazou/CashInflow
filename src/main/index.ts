@@ -89,10 +89,27 @@ function reopenServices(): void {
   services = new Services(dbHandle.db)
 }
 
+/**
+ * Initial window size, overridable by environment variable.
+ *
+ * The dashboard is a three-column layout that only fits above roughly 1440 CSS
+ * pixels, so the documented screenshots have to be taken on a window wide enough
+ * to show it. Without this, the only way to capture that view was to hand-resize
+ * the window before every shot, which is not reproducible.
+ *
+ * An environment variable rather than a CLI flag because it is not part of the
+ * app's supported interface: it exists for this repository's tooling, has an
+ * obvious default, and an invalid value is ignored rather than fatal.
+ */
+function windowDimension(name: string, fallback: number): number {
+  const raw = Number(process.env[name])
+  return Number.isFinite(raw) && raw >= 1024 ? Math.trunc(raw) : fallback
+}
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: windowDimension('CASHINFLOW_WINDOW_WIDTH', 1400),
+    height: windowDimension('CASHINFLOW_WINDOW_HEIGHT', 900),
     minWidth: 1024,
     minHeight: 700,
     show: false,

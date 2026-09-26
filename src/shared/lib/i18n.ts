@@ -224,6 +224,29 @@ export const T = {
   to: '结束',
   periodTotal: '周期总额',
 
+  // Dashboard period switcher. Three modes, named for the QUESTION each answers
+  // rather than for the mechanism, so the choice is obvious without reading help.
+  dashPeriodTitle: '统计周期',
+  dashPeriodNatural: '自然月',
+  dashPeriodCycle: '结算周期',
+  dashPeriodCustom: '自定义区间',
+  dashPeriodNaturalHint: '按日历月统计，1 日到月末。',
+  dashPeriodCycleHint: '按你设置的每月起始日统计，贴合生活费到账时间。',
+  dashPeriodCustomHint: '任意选择起止日期，或套用下面保存过的区间。',
+  dashPeriodNaturalSub: '自然月结算',
+  dashPeriodCustomSub: '自定义起止日期',
+  dashPeriodPast: '已结束',
+  dashPeriodCustomPick: '选择区间',
+  dashPeriodSaved: '已保存的区间',
+  dashPeriodSavedNone: '还没有保存过区间。',
+  dashPeriodApply: '应用',
+  dashPeriodQuick: '快捷选择',
+  dashPeriodBudget: '区间总金额',
+  dashPeriodBudgetHint: '填一个总金额，就能看到还剩多少。',
+  dashPeriodBudgetLeft: '剩余',
+  dashPeriodBudgetOver: '已超支',
+  dashPeriodSwitchFailed: '统计周期切换失败：',
+
   // Empty and error
   noData: '暂无数据',
   failedToLoad: '加载失败',
@@ -747,8 +770,7 @@ export function dateHeadingZh(date: string, format = 'DD MMM YYYY'): string {
   return `${body} ${weekday}`
 }
 
-/** Relative day label: 今天 / 昨天 / 前天, else the Chinese date heading. */
-export function relativeDayZh(date: string, reference: string, format = 'DD MMM YYYY'): string {
+/** Relative day label: 今天 / 昨天 / 前天, else the Chinese date heading. */export function relativeDayZh(date: string, reference: string, format = 'DD MMM YYYY'): string {
   const toUtc = (value: string): number => Date.parse(`${value}T00:00:00Z`)
   const diff = Math.round((toUtc(reference) - toUtc(date)) / 86_400_000)
   if (diff === 0) return '今天'
@@ -784,4 +806,20 @@ export function daysLabelZh(days: number): string {
   if (days === 0) return '今天结束'
   if (days < 0) return `已过期 ${Math.abs(days)} 天`
   return `还有 ${days} 天`
+}
+
+/** '5 日起算' — the settlement-cycle sub-heading on the dashboard. */
+export function cycleStartSubZh(day: number): string {
+  return `${day} 日起算`
+}
+
+/** '共 31 天' — the custom-range sub-heading on the dashboard. */
+export function periodDaysZh(days: number): string {
+  return `共 ${days} 天`
+}
+
+/** '已过 12 / 31 天 · 还有 19 天' — progress through the selected period. */
+export function periodProgressZh(elapsed: number, total: number): string {
+  const remaining = Math.max(total - elapsed, 0)
+  return `已过 ${elapsed} / ${total} 天 · 还有 ${remaining} 天`
 }

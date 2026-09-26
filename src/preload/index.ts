@@ -3,9 +3,9 @@ import { IPC_CHANNELS } from '@shared/types/ipc-contract'
 import type { IpcResult } from '@shared/types'
 
 /**
- * The preload bridge 鈥?the ONLY surface the renderer can reach.
+ * The preload bridge — the ONLY surface the renderer can reach.
  *
- * SECURITY (spec 搂5, 搂39)
+ * SECURITY (spec §5, §39)
  * ----------------------
  * - `contextIsolation: true` and `nodeIntegration: false` mean renderer code
  *   cannot `require('fs')`, `require('child_process')` or reach the database.
@@ -43,7 +43,7 @@ function makeError(error: { code: string; message: string; fields?: Record<strin
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const result = (await ipcRenderer.invoke(channel, ...args)) as IpcResult<T> | undefined
 
-  // A missing envelope means the handler was never registered 鈥?a wiring bug
+  // A missing envelope means the handler was never registered —a wiring bug
   // rather than a data problem, so say that rather than returning undefined and
   // letting the UI render a blank field.
   if (!result || typeof result !== 'object' || !('ok' in result)) {
@@ -101,11 +101,18 @@ const api = {
   transactionsSearch: (query: unknown) => invoke(IPC_CHANNELS.transactionsSearch, query),
 
   // --- dashboard & statistics -------------------------------------------
-  dashboardSummary: (cycleKey: string) => invoke(IPC_CHANNELS.dashboardSummary, cycleKey),
-  statsBiggestExpenses: (cycleKey: string, limit?: number) =>
-    invoke(IPC_CHANNELS.statsBiggestExpenses, cycleKey, limit),
+  /**
+   * `range` selects a custom window and `cycleStartDay` overrides the saved
+   * anchor for this request only. Both are optional, so callers that just want
+   * the user's default period keep the one-argument call.
+   */
+  dashboardSummary: (cycleKey: string, range?: unknown, cycleStartDay?: number) =>
+    invoke(IPC_CHANNELS.dashboardSummary, cycleKey, range ?? null, cycleStartDay),
+  statsBiggestExpenses: (cycleKey: string, limit?: number, range?: unknown) =>
+    invoke(IPC_CHANNELS.statsBiggestExpenses, cycleKey, limit, range ?? null),
   statsStatistics: (granularity: string, anchor: string) =>
     invoke(IPC_CHANNELS.statsStatistics, granularity, anchor),
+  statsRange: (from: string, to: string) => invoke(IPC_CHANNELS.statsRange, from, to),
   statsCalendar: (monthKey: string) => invoke(IPC_CHANNELS.statsCalendar, monthKey),
   statsDayTotals: (date: string) => invoke(IPC_CHANNELS.statsDayTotals, date),
   statsMonths: () => invoke(IPC_CHANNELS.statsMonths),

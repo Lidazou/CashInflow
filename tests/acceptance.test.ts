@@ -11,7 +11,7 @@ import { transactionsToCsv } from '@main/services/export'
  *
  * Each `it` maps to one numbered Test in the specification, so the claim "this
  * was verified" can be checked by running the suite rather than taken on trust.
- * Everything runs against a real SQLite file 鈥?no mocks 鈥?because the acceptance
+ * Everything runs against a real SQLite file —no mocks —because the acceptance
  * criteria are precisely about what the database actually does.
  */
 
@@ -354,7 +354,7 @@ describe('Test 10: the packaged app keeps working (data layer guarantees)', () =
     backupDatabase(handle.db, backupPath)
     expect(existsSync(backupPath)).toBe(true)
 
-    // The backup must be a fully usable database on its own 鈥?this is what
+    // The backup must be a fully usable database on its own —this is what
     // VACUUM INTO guarantees and a plain file copy would not while WAL is active.
     const restored = openDatabase({ dataDir: workDir, fileName: 'backup.db', skipSeed: true })
     const restoredAccounts = new Services(restored.db)

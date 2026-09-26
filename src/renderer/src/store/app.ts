@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppInfo, AppSettings } from '@shared/types'
+import type { AppInfo, AppSettings, DashboardPeriodMode, DashboardRange } from '@shared/types'
 import { DEFAULT_CURRENCY } from '@shared/lib/money'
 import { useRateStore } from './rates'
 
@@ -154,6 +154,11 @@ export function useBaseCurrency(): string {
  * `cycleStartDay` is included because the reporting period — not just its label —
  * depends on it: any page that computes "this month" must use the same cycle as
  * the dashboard or the figures will not agree.
+ *
+ * `dashboardPeriodMode` and `dashboardRange` ride along for the same reason: the
+ * dashboard's chosen period is a persisted preference, and a hook that returned
+ * the anchor without the mode would let a component compute a cycle for a month
+ * the user is not looking at.
  */
 export function useDisplaySettings(): {
   currency: string
@@ -162,6 +167,8 @@ export function useDisplaySettings(): {
   startOfWeek: 0 | 1
   cycleStartDay: number
   showOriginalCurrency: boolean
+  dashboardPeriodMode: DashboardPeriodMode
+  dashboardRange: DashboardRange | null
 } {
   const settings = useAppStore((state) => state.settings)
   return {
@@ -170,7 +177,9 @@ export function useDisplaySettings(): {
     dateFormat: settings?.dateFormat ?? 'DD MMM YYYY',
     startOfWeek: settings?.startOfWeek ?? 1,
     cycleStartDay: settings?.cycleStartDay ?? 1,
-    showOriginalCurrency: settings?.showOriginalCurrency ?? true
+    showOriginalCurrency: settings?.showOriginalCurrency ?? true,
+    dashboardPeriodMode: settings?.dashboardPeriodMode ?? 'cycle',
+    dashboardRange: settings?.dashboardRange ?? null
   }
 }
 
