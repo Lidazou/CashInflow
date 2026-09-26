@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+release/
+*.tsbuildinfo
+
+# Local npm cache (kept inside the workspace by .npmrc)
+.npm-cache/
+
+# Verification artefacts
+shot-*.png
+probe-cdp.cjs
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local databases — a user's financial data must never be committed.
+# The real database lives in %APPDATA%\SpendWise, but a stray copy here
+# (from a test or a manual experiment) would be a serious leak.
+*.db
+*.db-wal
+*.db-shm
+
+# Environment
+.env
+.env.local

@@ -1,0 +1,70 @@
+appId: com.spendwise.desktop
+productName: SpendWise
+copyright: Copyright © 2026 SpendWise
+
+directories:
+  output: release
+  buildResources: build
+
+# ---------------------------------------------------------------------------
+# IMPORTANT: native modules
+# ---------------------------------------------------------------------------
+# `npmRebuild: false` is deliberate, not an oversight.
+#
+# better-sqlite3 v13 moved to N-API (NAPI_VERSION=10) and ships prebuilt binaries
+# for every supported platform, including win32-x64. electron-builder's
+# `npmRebuild` defaults to TRUE, which makes @electron/rebuild recompile anything
+# with a `binding.gyp` — discarding the shipped prebuild in favour of one built
+# against a different ABI that then fails to load at runtime with a module-version
+# mismatch. Keeping the prebuild is what makes the packaged app work.
+#
+# A `.node` binary also cannot be dlopen-ed from inside app.asar, so `asarUnpack`
+# is mandatory rather than an optimisation.
+npmRebuild: false
+
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+  - '!**/{.git,.github,.vscode,test,tests,docs,example,examples}/**'
+  - '!**/{*.md,*.ts,*.tsx,tsconfig*.json,electron.vite.config.*,vitest.config.*}'
+
+# Stated explicitly even though `smartUnpack` defaults to true, so a future edit
+# cannot quietly remove the behaviour this build depends on.
+asar: true
+asarUnpack:
+  - node_modules/better-sqlite3/**
+buildDependenciesFromSource: false
+
+win:
+  target:
+    # NSIS produces the installer the spec asks for.
+    - target: nsis
+      arch: [x64]
+    # `portable` produces one self-contained .exe that runs with no
+    # installation, which is useful for trying the app without touching the
+    # machine. It is a second artifact from the same configuration.
+    - target: portable
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+  # The app writes only to the user's AppData, so it must never request
+  # elevation. An installer that asks for administrator rights for a personal
+  # finance app is a red flag.
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SpendWise
+  # A user's financial history must survive an uninstall, so the database in
+  # %APPDATA%\SpendWise is intentionally NOT removed by the uninstaller.
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+
+portable:
+  artifactName: ${productName}-${version}-${arch}-portable.${ext}

@@ -1,0 +1,380 @@
+@import './tokens.css';
+
+/* ============================================================================
+   SpendWise — Global base + utilities.
+   Plain CSS built entirely on the tokens in tokens.css.
+   Colour values live only in tokens.css; nothing here is hard-coded.
+   ========================================================================= */
+
+/* ---- reset ---- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Desktop shell: the app owns its scroll regions, never the window. */
+body {
+  overflow: hidden;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: var(--weight-normal);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+}
+
+button { cursor: pointer; }
+ul, ol { list-style: none; }
+table { border-collapse: collapse; border-spacing: 0; }
+
+a { color: var(--accent-text); text-decoration: none; transition: var(--transition-base); }
+a:hover { text-decoration: underline; }
+
+/* ---- focus — always visible for keyboard users ---- */
+:focus-visible { outline: var(--ring-width) solid var(--ring); outline-offset: 2px; }
+:focus:not(:focus-visible) { outline: none; }
+
+/* ---- selection ---- */
+::selection { background-color: var(--accent-subtle); color: var(--text-primary); }
+
+/* ---- scrollbars — thin, transparent track, thumb darkens on hover ---- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover { background-color: var(--text-tertiary); }
+
+/* ---- numeric alignment — money must line up in columns ---- */
+.num,
+.tabular,
+.amount,
+input[type='number'] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ---- text utilities ---- */
+.muted { color: var(--text-secondary); }
+.secondary { color: var(--text-secondary); font-size: var(--text-sm); }
+.truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- layout utilities ---- */
+.row { display: flex; align-items: center; gap: var(--space-3); }
+.col { display: flex; flex-direction: column; gap: var(--space-3); }
+.stack-sm { display: flex; flex-direction: column; gap: var(--space-2); }
+.stack-md { display: flex; flex-direction: column; gap: var(--space-4); }
+.spacer { flex: 1 1 auto; }
+.divider { width: 100%; height: 1px; border: 0; background-color: var(--border-subtle); }
+
+/* ---- card ---- */
+.card {
+  padding: var(--space-4);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+.card-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+/* ---- money colours ---- */
+.text-income { color: var(--income); }
+.text-expense { color: var(--expense); }
+.text-neutral { color: var(--neutral); }
+
+/* ---- buttons ---- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  height: 34px; padding: 0 var(--space-3); border: 1px solid transparent;
+  border-radius: var(--radius-md); background-color: transparent; color: var(--text-primary);
+  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-medium);
+  line-height: 1; white-space: nowrap; user-select: none; transition: var(--transition-base);
+}
+.btn:active { transform: translateY(1px); }
+.btn:disabled, .btn[aria-disabled='true'] { opacity: 0.5; cursor: not-allowed; }
+.btn:disabled:active, .btn[aria-disabled='true']:active { transform: none; }
+
+.btn-primary { background-color: var(--accent); border-color: var(--accent); color: var(--text-on-accent); }
+.btn-primary:hover:not(:disabled) { background-color: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-primary:active:not(:disabled) { background-color: var(--accent-active); border-color: var(--accent-active); }
+
+.btn-secondary { background-color: var(--bg-surface); border-color: var(--border-default); color: var(--text-primary); }
+.btn-secondary:hover:not(:disabled) { background-color: var(--bg-hover); border-color: var(--border-strong); }
+.btn-secondary:active:not(:disabled) { background-color: var(--bg-active); }
+
+.btn-ghost { color: var(--text-secondary); }
+.btn-ghost:hover:not(:disabled) { background-color: var(--bg-hover); color: var(--text-primary); }
+.btn-ghost:active:not(:disabled) { background-color: var(--bg-active); }
+
+.btn-danger { background-color: var(--expense-subtle); color: var(--expense); }
+.btn-danger:hover:not(:disabled), .btn-danger:active:not(:disabled) {
+  background-color: var(--expense);
+  color: var(--text-on-accent);
+}
+
+.btn-icon { width: 34px; padding: 0; }
+.btn-sm { height: 26px; padding: 0 var(--space-2); font-size: var(--text-xs); border-radius: var(--radius-sm); }
+.btn-sm.btn-icon { width: 26px; }
+
+/* ---- form controls ---- */
+.field { display: flex; flex-direction: column; gap: var(--space-1); width: 100%; }
+.field-label { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-primary); }
+.field-hint { font-size: var(--text-xs); color: var(--text-tertiary); }
+.field-error { font-size: var(--text-xs); color: var(--expense); }
+
+.input,
+.select,
+.textarea {
+  width: 100%; min-width: 0; height: 34px; padding: 0 var(--space-3);
+  font-family: var(--font-sans); font-size: var(--text-sm); color: var(--text-primary);
+  background-color: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); transition: var(--transition-base);
+}
+.textarea { height: auto; min-height: 84px; padding: var(--space-2) var(--space-3); line-height: var(--leading-normal); resize: vertical; }
+.select { cursor: pointer; }
+.input::placeholder, .textarea::placeholder { color: var(--text-tertiary); }
+.input:hover, .select:hover, .textarea:hover { border-color: var(--border-strong); }
+
+/* The ring replaces the outline here; the focus cue stays clearly visible. */
+.input:focus-visible, .select:focus-visible, .textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--ring-width) var(--ring);
+}
+.input[aria-invalid='true'], .select[aria-invalid='true'], .textarea[aria-invalid='true'] {
+  border-color: var(--expense);
+}
+.input[aria-invalid='true']:focus-visible,
+.select[aria-invalid='true']:focus-visible,
+.textarea[aria-invalid='true']:focus-visible {
+  box-shadow: 0 0 0 var(--ring-width) var(--expense-subtle);
+}
+
+/* ---- badges ---- */
+.badge {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: 2px var(--space-2); border-radius: var(--radius-full);
+  font-size: var(--text-2xs); font-weight: var(--weight-medium);
+  letter-spacing: 0.02em; white-space: nowrap;
+}
+.badge-income { background-color: var(--income-subtle); color: var(--income); }
+.badge-expense { background-color: var(--expense-subtle); color: var(--expense); }
+.badge-neutral { background-color: var(--bg-inset); color: var(--text-secondary); }
+
+/* ---- skeleton loading ---- */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--bg-inset);
+  border-radius: var(--radius-sm);
+  color: transparent;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(90deg, transparent 0%, var(--bg-hover) 50%, transparent 100%);
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1.4s var(--ease-out) infinite;
+}
+@keyframes skeleton-shimmer {
+  to { transform: translateX(100%); }
+}
+
+/* ---- empty state ---- */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--space-3); padding: var(--space-10) var(--space-6);
+  text-align: center; color: var(--text-secondary);
+}
+.empty-state-title { font-size: var(--text-lg); font-weight: var(--weight-semibold); color: var(--text-primary); }
+.empty-state p { max-width: 44ch; font-size: var(--text-sm); color: var(--text-secondary); }
+
+/* ---- data table ---- */
+.table { width: 100%; font-size: var(--text-sm); }
+.table th {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-default);
+}
+.table td { padding: var(--space-3); color: var(--text-primary); border-bottom: 1px solid var(--border-subtle); }
+.table tbody tr { transition: var(--transition-base); }
+.table tbody tr:hover { background-color: var(--bg-hover); }
+.table tbody tr:last-child td { border-bottom: 0; }
+.table th.num, .table td.num, .table th.amount, .table td.amount { text-align: right; }
+
+/* ---- reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { display: none; animation: none; }
+}
+
+/* ============================================================================
+   Multi-currency primitives.
+   Shared by Money.tsx, CurrencyBar.tsx and every page that shows converted
+   amounts. Kept here rather than in a component <style> block so the rate
+   ticker and the conversion note render identically wherever they appear.
+   ========================================================================= */
+
+/* ---- converted amount + original ---- */
+.money-original {
+  color: var(--text-tertiary);
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.conversion-note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.conversion-note__warn {
+  color: var(--warning);
+}
+
+/* ---- live rate ticker ---- */
+.rate-ticker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.rate-ticker__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.rate-ticker__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background-color: var(--text-tertiary);
+  flex: 0 0 6px;
+}
+/* The freshness indicator is the only place colour conveys meaning here, and it
+   is paired with a text label so it is never the sole signal. */
+.rate-ticker__status.is-fresh .rate-ticker__dot { background-color: var(--income); }
+.rate-ticker__status.is-today .rate-ticker__dot { background-color: var(--income); }
+.rate-ticker__status.is-recent .rate-ticker__dot { background-color: var(--warning); }
+.rate-ticker__status.is-stale .rate-ticker__dot { background-color: var(--expense); }
+.rate-ticker__status.is-manual .rate-ticker__dot { background-color: var(--accent); }
+.rate-ticker__status.is-stale { color: var(--warning); }
+
+.rate-ticker__list {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.rate-ticker__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.rate-ticker__pair { color: var(--text-tertiary); }
+.rate-ticker__value {
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+.rate-ticker__empty { font-size: var(--text-xs); color: var(--text-tertiary); }
+
+.rate-ticker__refresh {
+  appearance: none;
+  border: 1px solid var(--border-default);
+  background-color: var(--bg-surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition-base);
+}
+.rate-ticker__refresh:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.rate-ticker__refresh:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.rate-ticker.is-compact .rate-ticker__list { gap: var(--space-2); }
+.rate-ticker.is-compact .rate-ticker__item { font-size: var(--text-2xs); }
+
+/* ---- currency switcher ---- */
+.currency-switcher { display: inline-flex; min-width: 0; }
+.currency-switcher__select {
+  /* Narrower than a full form control: it is a view toggle, not a data entry
+     field, so it should not compete with the figures it changes. */
+  max-width: 200px;
+  font-size: var(--text-sm);
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,180 @@
+/* ============================================================================
+   SpendWise — Design Tokens
+   Single source of truth for colour, type, space, radius and motion.
+   Light is the DEFAULT theme; `.dark` on <html> opts into dark mode.
+   Dark keeps the SAME hierarchy via layered surfaces (never black + white).
+   Component styles live in global.css — nothing but tokens here.
+   ========================================================================= */
+
+/* ---- theme: light (default) ---- */
+:root {
+  color-scheme: light;
+
+  /* surfaces — layered: app < surface < raised */
+  --bg-app: #F7F7F5;
+  --bg-surface: #FFFFFF;
+  --bg-surface-raised: #FFFFFF;
+  --bg-inset: #EFEFEC;
+  --bg-hover: #F1F1EE;
+  --bg-active: #E7E7E2;
+
+  /* text */
+  --text-primary: #1F1F1F;
+  --text-secondary: #777777;
+  --text-tertiary: #8E8E8E;
+  --text-inverse: #FFFFFF;
+  --text-on-accent: #FFFFFF;
+
+  /* borders */
+  --border-subtle: #EBEBE7;
+  --border-default: #DDDDD8;
+  --border-strong: #C6C6C0;
+
+  /* accent — restrained indigo. Primary actions, focus, selection, active nav.
+     Never used to encode money. */
+  --accent: #4F46E5;
+  --accent-hover: #4338CA;
+  --accent-active: #3730A3;
+  --accent-subtle: #EEF0FE;
+  --accent-text: #4338CA;
+
+  /* semantic money — the only place colour carries meaning */
+  --income: #2E7D5B;
+  --income-subtle: #E7F2EC;
+  --expense: #C0392B;
+  --expense-subtle: #FAEBE9;
+  --warning: #A9761B;
+  --warning-subtle: #FAF2E2;
+  --neutral: #6B7280;
+
+  /* categorical chart palette — muted, colour-blind-aware, 8 steps */
+  --chart-1: #4C6FBF;
+  --chart-2: #D08C3C;
+  --chart-3: #4E9C8A;
+  --chart-4: #C4685E;
+  --chart-5: #8A7BB8;
+  --chart-6: #7A9A4E;
+  --chart-7: #C77FA8;
+  --chart-8: #6E8290;
+
+  /* radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+
+  /* shadows — whisper-quiet. No glow, no heavy elevation. */
+  --shadow-xs: 0 1px 2px rgba(31, 31, 31, 0.04);
+  --shadow-sm: 0 1px 3px rgba(31, 31, 31, 0.06), 0 1px 2px rgba(31, 31, 31, 0.04);
+  --shadow-md: 0 4px 12px rgba(31, 31, 31, 0.07), 0 1px 3px rgba(31, 31, 31, 0.05);
+
+  /* spacing — 4px base */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 64px;
+
+  /* typography */
+  --font-sans: Inter, "Segoe UI", -apple-system, system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, monospace;
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+  --text-4xl: 34px;
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+
+  /* focus ring — keyboard accessibility is non-negotiable */
+  --ring: rgba(79, 70, 229, 0.45);
+  --ring-width: 2px;
+
+  /* layout */
+  --sidebar-width: 208px;
+  --header-height: 56px;
+  --bottom-bar-height: 64px;
+
+  /* motion */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-base: background-color var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out), color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-out);
+}
+
+/* ---- theme: dark — layered greys, accent stays readable ---- */
+.dark {
+  color-scheme: dark;
+
+  --bg-app: #141414;
+  --bg-surface: #1C1C1C;
+  --bg-surface-raised: #232323;
+  --bg-inset: #101010;
+  --bg-hover: #262626;
+  --bg-active: #2E2E2E;
+
+  --text-primary: #EDEDED;
+  --text-secondary: #A0A0A0;
+  --text-tertiary: #8A8A8A;
+  --text-inverse: #141414;
+  --text-on-accent: #FFFFFF;
+
+  --border-subtle: #262626;
+  --border-default: #333333;
+  --border-strong: #454545;
+
+  --accent: #5B5FE8;
+  --accent-hover: #6E72F0;
+  --accent-active: #4F46E5;
+  --accent-subtle: #24244A;
+  --accent-text: #A5B4FC;
+
+  --income: #4FB286;
+  --income-subtle: #14291F;
+  --expense: #E06C60;
+  --expense-subtle: #2E1917;
+  --warning: #D9A441;
+  --warning-subtle: #2E2415;
+  --neutral: #8A8A8A;
+
+  --chart-1: #7C97DE;
+  --chart-2: #E0A961;
+  --chart-3: #6FBBA6;
+  --chart-4: #DC8A80;
+  --chart-5: #A99BD4;
+  --chart-6: #9DBB72;
+  --chart-7: #DB9DBF;
+  --chart-8: #94A6B4;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.50), 0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.40);
+
+  --ring: rgba(129, 140, 248, 0.55);
+}
+
+/* ---- reduced motion — neutralise durations, keep state changes instant ---- */
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  .dark {
+    --duration-fast: 1ms;
+    --duration-base: 1ms;
+    --transition-base: none;
+  }
+}
