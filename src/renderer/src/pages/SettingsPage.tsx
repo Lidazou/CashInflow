@@ -561,7 +561,7 @@ export default function SettingsPage(): React.JSX.Element {
   async function handleRestore(): Promise<void> {
     setDataError(null)
     const confirmed = window.confirm(
-      '要恢复备份吗？SpendWise 里现有的全部账户和交易都会被所选文件的内容替换。替换之前，应用会先把当前数据库复制一份作为安全副本保留在应用数据目录里，所以这一步是可以手工找回的。'
+      '要恢复备份吗？CashInflow 里现有的全部账户和交易都会被所选文件的内容替换。替换之前，应用会先把当前数据库复制一份作为安全副本保留在应用数据目录里，所以这一步是可以手工找回的。'
     )
     if (!confirmed) return
 
@@ -641,7 +641,7 @@ export default function SettingsPage(): React.JSX.Element {
   async function handleDemoClear(): Promise<void> {
     setDataError(null)
     const confirmed = window.confirm(
-      '要清除示例数据吗？只会删除由 SpendWise 创建的示例账户和示例交易，你自己记录的交易不会被动到。'
+      '要清除示例数据吗？只会删除由 CashInflow 创建的示例账户和示例交易，你自己记录的交易不会被动到。'
     )
     if (!confirmed) return
 
@@ -1361,7 +1361,7 @@ export default function SettingsPage(): React.JSX.Element {
           <div>
             <p className="set__warningTitle">恢复备份会替换当前全部数据</p>
             <p className="set__warningBody">
-              你现在所有的账户和交易都会被移除，由备份文件里的内容取代。在替换之前，SpendWise
+              你现在所有的账户和交易都会被移除，由备份文件里的内容取代。在替换之前，CashInflow
               会先把当前数据库复制一份作为安全副本保存在应用数据目录里，恢复完成后会在下方显示这条副本的路径，所以这一步是可以手工找回的。注意：最近一次备份之后记录的内容，不在那份备份里。
             </p>
           </div>
@@ -1516,7 +1516,7 @@ export default function SettingsPage(): React.JSX.Element {
         </div>
 
         <p className="muted set__small">
-          已经有交易在使用的分类不能直接删除。SpendWise
+          已经有交易在使用的分类不能直接删除。CashInflow
           会先问你要把这些交易转移到哪里，历史记录绝不会在你不知情的情况下被改写。
         </p>
 
@@ -1799,7 +1799,7 @@ export default function SettingsPage(): React.JSX.Element {
         </div>
 
         <p className="muted set__small">
-          用来体验功能的示例账户和示例交易。示例数据只能加进一本空账本——账本里已经有内容时，SpendWise
+          用来体验功能的示例账户和示例交易。示例数据只能加进一本空账本——账本里已经有内容时，CashInflow
           会直接拒绝，而不会把示例记录混进你的真实账目。清除示例数据时，只会删除由示例创建的记录，你自己记的交易不受影响。
         </p>
 

@@ -1,4 +1,4 @@
-﻿import type { SpendWiseApi } from '@shared/types/ipc-contract'
+import type { CashInflowApi } from '@shared/types/ipc-contract'
 
 /**
  * Ambient declaration for the preload bridge.
@@ -9,7 +9,7 @@
  */
 declare global {
   interface Window {
-    api: SpendWiseApi
+    api: CashInflowApi
   }
 }
 

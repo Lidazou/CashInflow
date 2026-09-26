@@ -1,6 +1,6 @@
-appId: com.spendwise.desktop
-productName: SpendWise
-copyright: Copyright © 2026 SpendWise
+appId: com.cashinflow.desktop
+productName: CashInflow
+copyright: Copyright © 2026 CashInflow
 
 directories:
   output: release
@@ -59,9 +59,9 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: SpendWise
+  shortcutName: CashInflow
   # A user's financial history must survive an uninstall, so the database in
-  # %APPDATA%\SpendWise is intentionally NOT removed by the uninstaller.
+  # %APPDATA%\CashInflow is intentionally NOT removed by the uninstaller.
   deleteAppDataOnUninstall: false
   runAfterFinish: true
   artifactName: ${productName}-${version}-${arch}-setup.${ext}

@@ -1,4 +1,4 @@
-﻿import { describe, it } from 'vitest'
+import { describe, it } from 'vitest'
 import { join } from 'node:path'
 import { openDatabase } from '@main/database/connection'
 import { Services } from '@main/services'
@@ -18,7 +18,7 @@ const enabled = process.env['SW_SEED_DEMO'] === '1'
 
 describe.skipIf(!enabled)('manual: seed the live database', () => {
   it('seeds demo data into the app userData directory', () => {
-    const dataDir = join(process.env['APPDATA'] ?? '', 'SpendWise')
+    const dataDir = join(process.env['APPDATA'] ?? '', 'CashInflow')
     const handle = openDatabase({ dataDir })
     const services = new Services(handle.db)
 

@@ -1,6 +1,6 @@
 import type { AccountType } from '@shared/types'
 
-export const APP_NAME = 'SpendWise'
+export const APP_NAME = 'CashInflow'
 
 /** Highest schema version this build understands. */
 export const SCHEMA_VERSION = 2

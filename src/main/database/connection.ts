@@ -16,7 +16,7 @@ import { nowIso } from '@shared/lib/dates'
  * The file is created in the OS application-data directory, passed in from
  * `app.getPath('userData')` by the main process. In production that resolves to:
  *
- *     C:\Users\<user>\AppData\Roaming\SpendWise\spendwise.db
+ *     C:\Users\<user>\AppData\Roaming\CashInflow\spendwise.db
  *
  * It is deliberately NOT inside the project directory or next to the .exe:
  *   - an installed app's program-files directory may be read-only;

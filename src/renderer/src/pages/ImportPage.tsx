@@ -222,7 +222,7 @@ export default function ImportPage(): React.JSX.Element {
           <p className="imp__hint">
             <Icon name="info" size={16} />
             <span>
-              SpendWise cannot connect to your bank, WeChat or Alipay directly. Export a statement from the app or
+              CashInflow cannot connect to your bank, WeChat or Alipay directly. Export a statement from the app or
               website first, then import the file here. Header rows are located automatically, so a preamble or a
               summary footer will not confuse the importer.
             </span>

@@ -1,5 +1,5 @@
 /**
- * charts.tsx — hand-rolled chart primitives for SpendWise.
+ * charts.tsx — hand-rolled chart primitives for CashInflow.
  *
  * WHY NO CHART LIBRARY
  * --------------------

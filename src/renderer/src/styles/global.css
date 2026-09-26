@@ -1,7 +1,7 @@
 @import './tokens.css';
 
 /* ============================================================================
-   SpendWise — Global base + utilities.
+   CashInflow — Global base + utilities.
    Plain CSS built entirely on the tokens in tokens.css.
    Colour values live only in tokens.css; nothing here is hard-coded.
    ========================================================================= */

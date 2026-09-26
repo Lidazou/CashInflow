@@ -313,7 +313,7 @@ export interface IpcContract {
  * explicit list safe: adding a channel to `IpcContract` without adding the
  * matching method here is a compile error, so the two cannot drift apart.
  */
-export interface SpendWiseApi {
+export interface CashInflowApi {
   // --- app ---------------------------------------------------------------
   appInfo: () => Promise<AppInfo>
   appOpenExternal: (url: string) => Promise<{ opened: true }>
@@ -432,7 +432,7 @@ export interface SpendWiseApi {
 /**
  * Compile-time completeness check.
  *
- * `IpcContract` is keyed by channel string ('accounts:list') while `SpendWiseApi`
+ * `IpcContract` is keyed by channel string ('accounts:list') while `CashInflowApi`
  * is keyed by bridge method name ('accountsList'). Both are written by hand, so
  * this asserts that every channel declared in `IPC_CHANNELS` has a corresponding
  * bridge method 鈥?forgetting to expose a newly declared channel becomes a
@@ -456,7 +456,7 @@ type ExpectedApiMethods = ColonToCamel<InvocableChannels>
  * If one is missing, this type becomes the missing method name and the
  * annotated constant below fails to compile with that name in the error.
  */
-type MissingBridgeMethods = Exclude<ExpectedApiMethods, keyof SpendWiseApi>
+type MissingBridgeMethods = Exclude<ExpectedApiMethods, keyof CashInflowApi>
 type AllChannelsExposed = [MissingBridgeMethods] extends [never] ? true : MissingBridgeMethods
 
 const _assertEveryChannelExposed: AllChannelsExposed = true

@@ -75,7 +75,7 @@ function pageTitleFor(pathname: string): string {
   const exact = PAGE_TITLES.find((entry) => entry.path === pathname)
   if (exact) return exact.title
   const nested = PAGE_TITLES.find((entry) => entry.path !== '/' && pathname.startsWith(`${entry.path}/`))
-  return nested ? nested.title : 'SpendWise'
+  return nested ? nested.title : 'CashInflow'
 }
 
 const SHELL_STYLES = `
@@ -251,7 +251,7 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
           <span className="sw-shell__brand-mark" aria-hidden="true">
             S
           </span>
-          <span className="sw-shell__brand-text">SpendWise</span>
+          <span className="sw-shell__brand-text">CashInflow</span>
         </div>
 
         <nav className="sw-shell__nav" aria-label="主导航">

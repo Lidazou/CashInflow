@@ -1,9 +1,9 @@
 {
-  "name": "spendwise",
+  "name": "cashinflow",
   "version": "1.1.0",
-  "description": "记账本 SpendWise — a local-first multi-currency personal finance manager for Windows. Electron + React + SQLite.",
+  "description": "CashInflow — a local-first multi-currency personal finance manager for Windows. Electron + React + SQLite.",
   "main": "./out/main/index.js",
-  "author": "SpendWise",
+  "author": "CashInflow",
   "license": "MIT",
   "private": true,
   "engines": {

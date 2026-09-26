@@ -535,7 +535,7 @@ export function registerIpcHandlers(context: IpcContext): void {
       const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? undefined
       const result = await dialog.showSaveDialog(window!, {
         title: 'Export transactions as CSV',
-        defaultPath: join(app.getPath('documents'), `spendwise-transactions-${nowIso().slice(0, 10)}.csv`),
+        defaultPath: join(app.getPath('documents'), `cashinflow-transactions-${nowIso().slice(0, 10)}.csv`),
         filters: [{ name: 'CSV', extensions: ['csv'] }]
       })
 
@@ -560,7 +560,7 @@ export function registerIpcHandlers(context: IpcContext): void {
       const stamp = nowIso().slice(0, 19).replace(/[:T]/g, '-')
       const result = await dialog.showSaveDialog(window!, {
         title: 'Export database backup',
-        defaultPath: join(app.getPath('documents'), `spendwise-backup-${stamp}.db`),
+        defaultPath: join(app.getPath('documents'), `cashinflow-backup-${stamp}.db`),
         filters: [{ name: 'SQLite database', extensions: ['db'] }]
       })
 
@@ -595,9 +595,9 @@ export function registerIpcHandlers(context: IpcContext): void {
     const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? undefined
 
     const chosen = await dialog.showOpenDialog(window!, {
-      title: 'Restore from a SpendWise backup',
+      title: 'Restore from a CashInflow backup',
       properties: ['openFile'],
-      filters: [{ name: 'SpendWise backup', extensions: ['db'] }]
+      filters: [{ name: 'CashInflow backup', extensions: ['db'] }]
     })
     if (chosen.canceled || chosen.filePaths.length === 0) return { canceled: true, restore: null }
     const source = chosen.filePaths[0]
@@ -610,7 +610,7 @@ export function registerIpcHandlers(context: IpcContext): void {
       defaultId: 0,
       cancelId: 0,
       title: 'Replace all current data?',
-      message: 'Restoring a backup replaces every account and transaction currently in SpendWise.',
+      message: 'Restoring a backup replaces every account and transaction currently in CashInflow.',
       detail:
         'A safety copy of your current database is saved in the app data folder before anything is replaced, so this can be undone by hand if needed.'
     })
@@ -781,7 +781,7 @@ function defaultDemoMonth(): string {
  *
  * Ordering matters and is the whole point of this function:
  *   1. Validate the candidate by opening it read-only and checking its schema
- *      version. A file that is not a SpendWise database must be rejected BEFORE
+ *      version. A file that is not a CashInflow database must be rejected BEFORE
  *      anything is replaced 闁?otherwise the user loses their data to a bad file.
  *   2. Snapshot the current database so the operation is recoverable.
  *   3. Close the live connection, swap the file, reopen.
@@ -810,7 +810,7 @@ function restoreFromBackup(
     if (tables.length < 3) {
       throw new AppError(
         'VALIDATION',
-        'That file is not a SpendWise backup: it is missing the expected database tables. Your current data was not changed.'
+        'That file is not a CashInflow backup: it is missing the expected database tables. Your current data was not changed.'
       )
     }
 
@@ -818,7 +818,7 @@ function restoreFromBackup(
     if (version > SCHEMA_VERSION) {
       throw new AppError(
         'VALIDATION',
-        `That backup was created by a newer version of SpendWise (schema ${version}, this build understands ${SCHEMA_VERSION}). Update the app, then restore again. Your current data was not changed.`
+        `That backup was created by a newer version of CashInflow (schema ${version}, this build understands ${SCHEMA_VERSION}). Update the app, then restore again. Your current data was not changed.`
       )
     }
 

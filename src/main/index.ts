@@ -30,12 +30,12 @@ import { IPC_CHANNELS } from '@shared/types/ipc-contract'
  * land somewhere different from a user's. Setting it explicitly makes the
  * location identical in both cases:
  *
- *     C:\Users\<user>\AppData\Roaming\SpendWise\spendwise.db
+ *     C:\Users\<user>\AppData\Roaming\CashInflow\spendwise.db
  *
  * This must run before the first `app.getPath` call, which is why it sits at
  * module scope rather than inside `whenReady`.
  */
-app.setName('SpendWise')
+app.setName('CashInflow')
 
 const isDev = !app.isPackaged
 
@@ -97,7 +97,7 @@ function createWindow(): BrowserWindow {
     minHeight: 700,
     show: false,
     backgroundColor: '#F7F7F5',
-    title: 'SpendWise',
+    title: 'CashInflow',
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -226,7 +226,7 @@ if (!gotLock) {
       // A failure here means the app cannot function at all; say so plainly
       // instead of opening a window that merely appears empty.
       dialog.showErrorBox(
-        'SpendWise could not start',
+        'CashInflow could not start',
         `The local database could not be opened.\n\n${message}\n\nLocation: ${databasePath()}`
       )
       app.quit()

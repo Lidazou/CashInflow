@@ -186,7 +186,7 @@ const api = {
   }
 }
 
-export type SpendWiseBridge = typeof api
+export type CashInflowBridge = typeof api
 
 // `contextBridge` is the only sanctioned way to cross the isolation boundary.
 contextBridge.exposeInMainWorld('api', api)

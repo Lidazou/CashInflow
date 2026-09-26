@@ -49,7 +49,7 @@ export default function App(): React.JSX.Element {
   if (!ready) {
     return (
       <div className="app-boot" role="status" aria-live="polite">
-        <div className="app-boot__mark">SpendWise</div>
+        <div className="app-boot__mark">CashInflow</div>
         <p className="muted">Opening your local database…</p>
       </div>
     )
@@ -58,7 +58,7 @@ export default function App(): React.JSX.Element {
   if (bootError) {
     return (
       <div className="app-boot app-boot--error" role="alert">
-        <h1 className="app-boot__mark">SpendWise could not start</h1>
+        <h1 className="app-boot__mark">CashInflow could not start</h1>
         <p className="muted">{bootError}</p>
         <p className="muted">
           Your data has not been modified. Restart the app, and if the problem continues, check that the application

@@ -165,7 +165,7 @@ export function dateFormatLabel(format: string): string {
 /** Static interface text. Keys are referenced from components. */
 export const T = {
   appName: '记账本',
-  appNameEn: 'SpendWise',
+  appNameEn: 'CashInflow',
 
   // Navigation
   navDashboard: '总览',

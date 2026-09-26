@@ -15,7 +15,7 @@ const container = document.getElementById('root')
 if (!container) {
   document.body.innerHTML =
     '<div style="font-family: Segoe UI, sans-serif; padding: 40px; color: #1F1F1F;">' +
-    '<h1 style="font-size: 18px; margin-bottom: 8px;">SpendWise could not start</h1>' +
+    '<h1 style="font-size: 18px; margin-bottom: 8px;">CashInflow could not start</h1>' +
     '<p style="color: #777;">The application root element is missing from the page.</p>' +
     '</div>'
 } else {
@@ -29,7 +29,7 @@ if (!container) {
     const message = error instanceof Error ? error.message : String(error)
     container.innerHTML =
       '<div style="font-family: Segoe UI, sans-serif; padding: 40px; color: #1F1F1F;">' +
-      '<h1 style="font-size: 18px; margin-bottom: 8px;">SpendWise could not start</h1>' +
+      '<h1 style="font-size: 18px; margin-bottom: 8px;">CashInflow could not start</h1>' +
       `<p style="color: #777;">${message.replace(/[<>&]/g, '')}</p>` +
       '</div>'
   }

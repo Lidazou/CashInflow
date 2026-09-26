@@ -1,4 +1,4 @@
-# 记账本 SpendWise
+# CashInflow
 
 A local-first personal finance manager for Windows, built for **Chinese students
 studying abroad**.
@@ -150,7 +150,7 @@ no filesystem access and no SQL.
 └───────────────────┬──────────────────────────┘
                     │  prepared statements, bound parameters
 ┌───────────────────▼──────────────────────────┐
-│  SQLite  (%APPDATA%\SpendWise\spendwise.db)  │
+│  SQLite  (%APPDATA%\CashInflow\spendwise.db)  │
 └──────────────────────────────────────────────┘
 ```
 
@@ -331,7 +331,7 @@ could fall into different cycles depending on the month.
 ## Where your data lives
 
 ```
-C:\Users\<you>\AppData\Roaming\SpendWise\spendwise.db
+C:\Users\<you>\AppData\Roaming\CashInflow\spendwise.db
 ```
 
 The exact path is shown in **Settings → Security**, with a button to reveal the
@@ -356,13 +356,13 @@ to *use* the app — only to build it.
 
 ### Install from the installer
 
-1. Run `SpendWise-1.0.0-x64-setup.exe`.
+1. Run `CashInflow-1.0.0-x64-setup.exe`.
 2. Choose an install location (or accept the default).
-3. Launch SpendWise from the Start menu or desktop shortcut.
+3. Launch CashInflow from the Start menu or desktop shortcut.
 
 ### Or run the portable build
 
-`SpendWise-1.0.0-x64-portable.exe` is a single self-contained file. Run it with
+`CashInflow-1.0.0-x64-portable.exe` is a single self-contained file. Run it with
 no installation. It stores its data in the same AppData location.
 
 ### First run
@@ -474,8 +474,8 @@ This runs the build and then electron-builder, producing in `release/`:
 
 | Artifact | Description |
 |---|---|
-| `SpendWise-1.0.0-x64-setup.exe` | NSIS installer — choose the install directory, creates Start-menu and desktop shortcuts |
-| `SpendWise-1.0.0-x64-portable.exe` | Single self-contained executable, no installation |
+| `CashInflow-1.0.0-x64-setup.exe` | NSIS installer — choose the install directory, creates Start-menu and desktop shortcuts |
+| `CashInflow-1.0.0-x64-portable.exe` | Single self-contained executable, no installation |
 
 `npm run dist:dir` produces an unpacked `release/win-unpacked/` directory instead,
 which is quicker when you only want to smoke-test the packaged app.
@@ -522,7 +522,7 @@ Before anything is replaced, the app:
 
 1. **Validates the candidate** — opens it read-only and checks that the expected
    tables exist and that its schema version is not newer than this build. A file
-   that is not a SpendWise backup is rejected *before* your data is touched.
+   that is not a CashInflow backup is rejected *before* your data is touched.
 2. **Takes a safety snapshot** of your current database into the app data folder.
 3. **Closes, swaps the file, and reopens.**
 
@@ -531,7 +531,7 @@ byte-for-byte the backup you chose. A restore always asks for confirmation first
 
 ### Manual backup
 
-You can also simply copy the whole `%APPDATA%\SpendWise` folder while the app is
+You can also simply copy the whole `%APPDATA%\CashInflow` folder while the app is
 closed. To restore, put it back.
 
 ### Export CSV
@@ -545,7 +545,7 @@ and fields containing commas, quotes or newlines are quoted per RFC 4180.
 
 ## Importing statements
 
-SpendWise does **not** connect to bank, WeChat or Alipay APIs. Export a statement
+CashInflow does **not** connect to bank, WeChat or Alipay APIs. Export a statement
 from the provider's app or website, then import the file.
 
 ### Supported formats
@@ -583,7 +583,7 @@ from the provider's app or website, then import the file.
 
 Re-importing the same file must not double your spending, yet two genuine RM 4.50
 coffees on the same day must both survive. Those requirements conflict for any
-key built only from date, amount and payee, so SpendWise uses:
+key built only from date, amount and payee, so CashInflow uses:
 
 1. **The provider's own transaction id** when the file has one (WeChat 交易单号,
    Alipay 交易订单号).
@@ -706,7 +706,7 @@ narrow.
   no API keys and no accounts.
 
 Anyone with access to your Windows user account can read the database file, as
-they could read any file in your profile. SpendWise does **not** encrypt it at
+they could read any file in your profile. CashInflow does **not** encrypt it at
 rest; whole-disk encryption such as BitLocker is the appropriate control for that
 threat, and Settings → Security says so.
 

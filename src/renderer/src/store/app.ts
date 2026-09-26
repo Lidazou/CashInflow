@@ -95,7 +95,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       set({
         ready: true,
-        bootError: error instanceof Error ? error.message : 'SpendWise could not start.'
+        bootError: error instanceof Error ? error.message : 'CashInflow could not start.'
       })
     }
   },
