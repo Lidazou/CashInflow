@@ -266,6 +266,16 @@ export default function DashboardPage(): JSX.Element {
   const budgetAmount = dashboardRange?.budgetAmount ?? null
   const budgetLeft = budgetAmount === null ? null : budgetAmount - summary.month.expense
 
+  /**
+   * Did anything actually happen in this period?
+   *
+   * A period with no transactions has a genuinely zero net, and rendering that as
+   * a large "¥ 0.00 本期结余" is indistinguishable from a query that returned
+   * nothing. The centre then says "本周期无收支" instead, and the account balance
+   * below it is what tells the user their money is still there.
+   */
+  const periodActivity = summary.month.income !== 0 || summary.month.expense !== 0
+
   return (
     <>
       <style>{DASHBOARD_STYLES}</style>
@@ -375,9 +385,15 @@ export default function DashboardPage(): JSX.Element {
                 segments={segments}
                 size={340}
                 thickness={46}
-                centerLabel={formatDisplayMoney(summary.month.net, displayCurrency)}
-                centerSubLabel={T.remaining}
+                centerLabel={periodActivity ? formatDisplayMoney(summary.month.net, displayCurrency) : '—'}
+                centerSubLabel={periodActivity ? T.remaining : T.dashPeriodNoActivity}
                 centerHint={`${shown.start.slice(5).replace('-', '/')} – ${shown.end.slice(5).replace('-', '/')}`}
+                centerFootnote={
+                  summary.netWorthInBaseCurrency === null
+                    ? undefined
+                    : `${T.dashBalanceShort} ${formatDisplayMoney(summary.netWorthInBaseCurrency, displayCurrency)}`
+                }
+                footnoteSize={14}
                 currency={displayCurrency}
               />
             </div>

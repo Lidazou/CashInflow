@@ -79,6 +79,25 @@ export interface Donut3DProps {
   /** Small line under the caption, e.g. "9月5日 – 10月4日". */
   centerHint?: string
   /**
+   * Extra line at the very bottom of the centre slot, e.g. "余额 ¥12,000.00".
+   *
+   * Separate from `centerHint` rather than appended to it because the two answer
+   * different questions and only this one is optional: the hint says WHICH period
+   * is being shown and the footnote says what the account holds right now. A
+   * period with no transactions is exactly when the footnote matters most — the
+   * big figure is legitimately ¥0 and looks like a failed load without it.
+   */
+  centerFootnote?: string
+  /**
+   * Font size for `centerFootnote`, in px. Omit to auto-fit.
+   *
+   * Auto-fitting shrinks text until it fits the hole, which is right for a figure
+   * that must never clip but wrong for a footnote: a long balance would render at
+   * 9px and be the least readable line in the card. Callers that know their card
+   * has room pass a size and let the ellipsis handle the pathological case.
+   */
+  footnoteSize?: number
+  /**
    * Display currency for the tooltips and the a11y summary. Values are expected
    * to already be in this currency — conversion is the caller's job, because the
    * page owns the period and the rate table that the figure was computed with.
@@ -235,6 +254,21 @@ const DONUT3D_STYLES = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The footnote is the one line in the slot that carries a live account figure,
+   so it gets a subtle rule above it to separate it from the period metadata.
+   It is deliberately the SAME colour and size as the hint: bolding it competed
+   with the ring's own centre figure, which is still the primary number. */
+.donut3d__footnote {
+  color: var(--text-secondary);
+  line-height: var(--leading-tight);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-top: 5px;
+  margin-top: 3px;
+  border-top: 1px solid var(--border-subtle);
+}
 @media (prefers-reduced-motion: reduce) {
   .donut3d__slice { transition: none; }
 }
@@ -274,6 +308,8 @@ export function Donut3D({
   centerLabel,
   centerSubLabel,
   centerHint,
+  centerFootnote,
+  footnoteSize,
   currency,
   onSegmentClick,
   interactive = true
@@ -321,12 +357,17 @@ export function Donut3D({
   const hasValue = centerLabel !== undefined && centerLabel !== ''
   const hasCaption = centerSubLabel !== undefined && centerSubLabel !== ''
   const hasHint = centerHint !== undefined && centerHint !== ''
+  const hasFootnote = centerFootnote !== undefined && centerFootnote !== ''
 
   // One label is one line that must not overflow: shrink it, and let CSS clip
   // with an ellipsis as the final backstop.
   const valueFontSize = fitFontSize(centerLabel ?? '', textBox, dim * 0.13, 11)
   const captionFontSize = fitFontSize(centerSubLabel ?? '', textBox, dim * 0.05, 10)
   const hintFontSize = fitFontSize(centerHint ?? '', textBox, Math.min(12, dim * 0.0375), 9)
+  const footnoteFontSize =
+    typeof footnoteSize === 'number' && Number.isFinite(footnoteSize) && footnoteSize > 0
+      ? round2(clamp(footnoteSize, 9, dim * 0.1))
+      : fitFontSize(centerFootnote ?? '', textBox, Math.min(13, dim * 0.042), 9)
 
   /* ---- slices ---------------------------------------------------------- */
   // Integer addition only. Non-positive values are not drawn and, deliberately,
@@ -582,6 +623,11 @@ export function Donut3D({
             {hasHint ? (
               <div className="donut3d__hint" style={{ fontSize: hintFontSize }}>
                 {centerHint}
+              </div>
+            ) : null}
+            {hasFootnote ? (
+              <div className="donut3d__footnote" style={{ fontSize: footnoteFontSize }}>
+                {centerFootnote}
               </div>
             ) : null}
           </div>

@@ -246,6 +246,15 @@ export const T = {
   dashPeriodBudgetLeft: '剩余',
   dashPeriodBudgetOver: '已超支',
   dashPeriodSwitchFailed: '统计周期切换失败：',
+  /**
+   * Shown in the donut centre when the selected period contains no transactions.
+   *
+   * A zero net and a failed query look identical on screen, so the empty case is
+   * named rather than rendered as a large ¥ 0.00.
+   */
+  dashPeriodNoActivity: '本周期无收支',
+  /** Prefix for the account balance line inside the donut centre. */
+  dashBalanceShort: '余额',
 
   // Empty and error
   noData: '暂无数据',
