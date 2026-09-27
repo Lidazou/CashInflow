@@ -83,6 +83,8 @@ export default function DashboardPage(): JSX.Element {
     useDisplaySettings()
   const openCreateTransaction = useUiStore((state) => state.openCreateTransaction)
   const showTransactionDetail = useUiStore((state) => state.showTransactionDetail)
+  const openEditTransaction = useUiStore((state) => state.openEditTransaction)
+  const openEditTransfer = useUiStore((state) => state.openEditTransfer)
   const { run, pending } = useAction()
 
   const loadRates = useRateStore((state) => state.load)
@@ -608,7 +610,13 @@ export default function DashboardPage(): JSX.Element {
               ) : (
                 <ul className="sw-dash__txns">
                   {todayPage.items.map((row) => (
-                    <TodayTransactionRow key={row.id} row={row} onOpen={showTransactionDetail} />
+                    <TodayTransactionRow
+                      key={row.id}
+                      row={row}
+                      onOpen={showTransactionDetail}
+                      onEdit={openEditTransaction}
+                      onEditTransfer={openEditTransfer}
+                    />
                   ))}
                 </ul>
               )}
@@ -1029,10 +1037,14 @@ function transactionIcon(row: TransactionWithRefs): IconName {
 
 function TodayTransactionRow({
   row,
-  onOpen
+  onOpen,
+  onEdit,
+  onEditTransfer
 }: {
   row: TransactionWithRefs
   onOpen: (row: TransactionWithRefs) => void
+  onEdit: (row: TransactionWithRefs) => void
+  onEditTransfer: (row: TransactionWithRefs) => void
 }): JSX.Element {
   const color = row.categoryColor ?? 'var(--text-tertiary)'
   return (
@@ -1054,6 +1066,24 @@ function TodayTransactionRow({
           {row.type === 'transfer' ? '' : row.type === 'income' ? '+' : '−'}
           <Money minor={Math.abs(row.amount)} currency={row.accountCurrency} convert absolute />
         </span>
+      </button>
+
+      {/*
+        An edit shortcut on the row itself, next to the one that opens the read-only detail.
+
+        The dashboard's "today" list is where a mistyped amount is most likely to be noticed, and
+        routing every correction through the detail drawer first is a step too many for the
+        common case. It is a sibling of the row button rather than a child, because a button
+        inside a button is invalid and the inner one would swallow the outer click.
+      */}
+      <button
+        type="button"
+        className="btn btn-ghost btn-icon sw-dash__txn-edit"
+        aria-label={`${T.edit} ${transactionTitle(row)}`}
+        title={`${T.edit} ${transactionTitle(row)}`}
+        onClick={() => (row.type === 'transfer' ? onEditTransfer(row) : onEdit(row))}
+      >
+        <Icon name="edit" size={14} />
       </button>
     </li>
   )
@@ -1245,8 +1275,13 @@ const DASHBOARD_STYLES = `
 .sw-dash__colhead { display: flex; flex-direction: column; gap: 1px; }
 .sw-dash__subhead { margin: 0; font-size: var(--text-xs); }
 .sw-dash__txns { list-style: none; margin: 0; padding: 0; }
-.sw-dash__txn { border-bottom: 1px solid var(--border-subtle); }
+.sw-dash__txn { border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; }
 .sw-dash__txn:last-child { border-bottom: none; }
+/* The edit shortcut sits beside the row, revealed on hover so the list stays readable. */
+.sw-dash__txn-edit { flex: 0 0 auto; margin-right: var(--space-2); opacity: 0; transition: opacity var(--duration-fast) var(--ease-out); }
+.sw-dash__txn:hover .sw-dash__txn-edit,
+.sw-dash__txn:focus-within .sw-dash__txn-edit { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .sw-dash__txn-edit { transition: none; } }
 .sw-dash__txn-btn {
   width: 100%; display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-2) 0; background: transparent; border: none;

@@ -47,6 +47,8 @@ import type {
   KlineGranularity,
   KlineSeries,
   MultiCurrencyTotals,
+  OcrResult,
+  OcrStatus,
   RecurringRule,
   RecurringRuleInput,
   RestoreResult,
@@ -167,6 +169,11 @@ export const IPC_CHANNELS = {
   // --- demo data ---------------------------------------------------------
   demoSeed: 'demo:seed',
   demoClear: 'demo:clear',
+
+  // --- receipt OCR (v1.5.2) ----------------------------------------------
+  ocrStatus: 'ocr:status',
+  ocrPickImage: 'ocr:pickImage',
+  ocrRecognize: 'ocr:recognize',
 
   // --- events pushed from main to renderer ------------------------------
   eventDataChanged: 'event:dataChanged'
@@ -335,6 +342,14 @@ export interface IpcContract {
 
   [IPC_CHANNELS.demoSeed]: { args: [monthKey?: string]; result: { accounts: number; transactions: number } }
   [IPC_CHANNELS.demoClear]: { args: []; result: { removedTransactions: number } }
+
+  // --- receipt OCR -------------------------------------------------------
+  [IPC_CHANNELS.ocrStatus]: { args: []; result: OcrStatus }
+  [IPC_CHANNELS.ocrPickImage]: {
+    args: []
+    result: { canceled: boolean; filePath: string | null; fileName: string | null; sizeBytes: number | null }
+  }
+  [IPC_CHANNELS.ocrRecognize]: { args: [filePath: string]; result: OcrResult }
 }
 
 /**
@@ -470,6 +485,19 @@ export interface CashInflowApi {
   recurringDelete: (id: number) => Promise<{ deleted: true }>
   recurringDue: (asOf?: string) => Promise<Array<{ rule: RecurringRule; dueDate: string }>>
   recurringConfirm: (ruleId: number, date: string) => Promise<TransactionWithRefs>
+
+  // --- receipt OCR (v1.5.2) ----------------------------------------------
+  ocrStatus: () => Promise<OcrStatus>
+  /** Opens a native image picker. Returns the chosen path, or null when cancelled. */
+  ocrPickImage: () => Promise<{ canceled: boolean; filePath: string | null; fileName: string | null; sizeBytes: number | null }>
+  /**
+   * Recognise text in an image on disk.
+   *
+   * The image NEVER crosses this boundary: the renderer sends a path it just received from the
+   * picker and gets text back. A receipt is a photograph of somebody's bank statement, and the
+   * cheapest way to be sure it is not copied anywhere is for it never to be in the other process.
+   */
+  ocrRecognize: (filePath: string) => Promise<OcrResult>
 
   // --- demo data ---------------------------------------------------------
   demoSeed: (monthKey?: string) => Promise<{ accounts: number; transactions: number }>

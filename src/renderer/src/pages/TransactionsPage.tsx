@@ -389,7 +389,7 @@ export default function TransactionsPage(): React.JSX.Element {
                           .filter(Boolean)
                           .join(' · ')
                     return (
-                      <li key={item.id} className="txp__row">
+                      <li key={item.id} className="txp__row" data-tx-id={item.id}>
                         <button
                           type="button"
                           className="txp__rowMain"
@@ -438,8 +438,9 @@ export default function TransactionsPage(): React.JSX.Element {
                         <div className="txp__rowActions">
                           <button
                             type="button"
-                            className="btn btn-ghost btn-icon"
+                            className="btn btn-ghost btn-icon txp__rowEdit"
                             aria-label={`${T.edit} ${title}`}
+                            title={`${T.edit} ${title}`}
                             disabled={pending}
                             onClick={() => (isTransfer ? openEditTransfer(item) : openEdit(item))}
                           >
@@ -449,6 +450,7 @@ export default function TransactionsPage(): React.JSX.Element {
                             type="button"
                             className="btn btn-ghost btn-icon"
                             aria-label={`${T.delete} ${title}`}
+                            title={`${T.delete} ${title}`}
                             disabled={pending}
                             onClick={() => void handleDelete(item)}
                           >
@@ -594,14 +596,29 @@ const TRANSACTIONS_CSS = `
 .txp__rowActions {
   display: flex;
   gap: 2px;
+  align-items: center;
   padding-right: var(--space-3);
+}
+/*
+  EDIT is always visible; DELETE waits for the pointer.
+
+  Both used to share a single opacity-0 rule that lifted on hover, and the effect was that the
+  editing feature was reported as missing — a control nobody can see is a control that does not
+  exist. Editing is the reversible, everyday action and it is the one worth the permanent column
+  of pixels; deleting is not, so it keeps the hover reveal and the confirmation dialog behind it.
+*/
+.txp__rowEdit { opacity: 0.55; transition: opacity var(--duration-fast) var(--ease-out); }
+.txp__row:hover .txp__rowEdit,
+.txp__row:focus-within .txp__rowEdit { opacity: 1; }
+.txp__rowActions > .btn:not(.txp__rowEdit) {
   opacity: 0;
   transition: opacity var(--duration-fast) var(--ease-out);
 }
-.txp__row:hover .txp__rowActions,
-.txp__row:focus-within .txp__rowActions { opacity: 1; }
+.txp__row:hover .txp__rowActions > .btn:not(.txp__rowEdit),
+.txp__row:focus-within .txp__rowActions > .btn:not(.txp__rowEdit) { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
-  .txp__rowActions { transition: none; }
+  .txp__rowActions > .btn,
+  .txp__rowEdit { transition: none; }
 }
 .txp__truncated { font-size: var(--text-sm); text-align: center; padding: var(--space-3) 0; }
 `

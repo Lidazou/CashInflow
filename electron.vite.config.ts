@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { copyFileSync, mkdirSync } from 'node:fs'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
@@ -11,12 +12,26 @@ import react from '@vitejs/plugin-react'
  *   src/renderer -> out/renderer/          (React UI, loaded via file://)
  *
  * `externalizeDepsPlugin` keeps runtime `dependencies` (better-sqlite3,
- * exceljs) out of the main bundle so their native binaries and lazy requires
- * keep working from node_modules inside the packaged app.
+ * exceljs, tesseract.js) out of the main bundle so their native binaries and
+ * lazy requires keep working from node_modules inside the packaged app.
+ *
+ * The OCR worker is COPIED rather than bundled, and that is not a style choice: it runs as a
+ * child process, and the main bundle is one file with no module boundaries a child could
+ * require. See `src/main/ocr/worker.cjs` for why it is a separate process at all.
  */
+function copyOcrWorker(): { name: string; writeBundle: () => void } {
+  return {
+    name: 'cashinflow:copy-ocr-worker',
+    writeBundle() {
+      mkdirSync(resolve('out/main'), { recursive: true })
+      copyFileSync(resolve('src/main/ocr/worker.cjs'), resolve('out/main/ocr-worker.cjs'))
+    }
+  }
+}
+
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin(), copyOcrWorker()],
     resolve: {
       alias: {
         '@shared': resolve('src/shared'),

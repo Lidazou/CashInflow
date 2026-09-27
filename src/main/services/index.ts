@@ -8,6 +8,7 @@ import { ImportService } from './import'
 import { BudgetsService, RecurringService, SettingsService, SubscriptionsService } from './settings'
 import { DemoDataService } from './demo'
 import { ExchangeRateService } from './exchange'
+import { OcrService } from './ocr'
 import { AppError } from '@main/database/errors'
 import { DEFAULT_CURRENCY } from '@shared/lib/money'
 import { nowIso } from '@shared/lib/dates'
@@ -32,6 +33,7 @@ export class Services {
   readonly recurring: RecurringService
   readonly demo: DemoDataService
   readonly exchange: ExchangeRateService
+  readonly ocr: OcrService
 
   /** Remembers the last rate-refresh failure so the UI can report it honestly. */
   lastRateError: string | null = null
@@ -42,6 +44,8 @@ export class Services {
     this.transactions = new TransactionsService(db, this.accounts, this.categories)
     this.settings = new SettingsService(db)
     this.exchange = new ExchangeRateService(db)
+    // No database: recognition reads an image and returns text. The ledger never sees it.
+    this.ocr = new OcrService()
 
     // Statistics needs the cached rate table, and the rate table lives in the
     // database. This is a lazy read rather than a construction-time value so a

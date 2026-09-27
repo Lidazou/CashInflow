@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Interface text, in Simplified Chinese.
  *
  * WHY A PLAIN MODULE AND NOT AN i18n LIBRARY
@@ -348,6 +348,50 @@ export const T = {
   txdUpdatedTransaction: '交易已更新。',
   txdSavedTransfer: '转账已记录。',
   txdUpdatedTransfer: '转账已更新。',
+
+  // Batch entry (v1.5.2): several transactions in one sitting
+  txdBatchAdd: '再记一笔',
+  txdBatchAddHint: '把这一笔放进待保存列表，然后继续记下一笔',
+  txdBatchPending: '待保存',
+  txdBatchCount: '待保存 {n} 笔',
+  txdBatchSum: '合计',
+  txdBatchSharedNote: '账户、日期、时间由上方统一设定，会应用到列表里的每一笔。',
+  txdBatchRemove: '移除此笔',
+  txdBatchClear: '清空列表',
+  txdBatchClearConfirm: '清空待保存的 {n} 笔？列表里的内容会全部丢失。',
+  txdBatchSaveAll: '全部保存（{n} 笔）',
+  txdBatchSaved: '已保存 {n} 笔交易。',
+  txdBatchPartial: '已保存 {done} 笔，第 {failed} 笔失败：{reason}',
+  txdBatchEmpty: '还没有待保存的交易。填好金额后点「再记一笔」。',
+  txdBatchNeedAccount: '请先选择账户，才能加入待保存列表。',
+  txdBatchTimeHint: '时间留空则这一笔不记录时刻',
+  txdBatchTransferUnsupported: '转账请单独保存，不能加入批量列表。',
+
+  // Receipt OCR (v1.5.2)
+  ocrButton: '识别账单照片',
+  ocrButtonHint: '从截图或照片里读出金额、日期和商家',
+  ocrDialogTitle: '识别账单',
+  ocrPick: '选择图片…',
+  ocrPickHint: '支持 PNG / JPG / WebP / BMP 截图或照片',
+  ocrPasteHint: '也可以直接按 Ctrl+V 粘贴剪贴板里的截图',
+  ocrRunning: '正在识别…',
+  ocrFirstRunNote: '首次识别需要加载语言包，大约几秒钟。识别在本机完成，图片不会上传。',
+  ocrFailed: '识别失败：{reason}',
+  ocrNoText: '没有从这张图片里读到文字。换一张更清晰、更正的图片试试。',
+  ocrFound: '识别到 {n} 条候选',
+  ocrFoundNone: '读到了文字，但没能确定金额和日期，请手动补全。',
+  ocrRawText: '原始识别文字',
+  ocrShowRaw: '查看识别到的原文',
+  ocrHideRaw: '收起原文',
+  ocrApplyOne: '填入这张',
+  ocrApplyAll: '全部填入待保存列表（{n} 笔）',
+  ocrConfidence: '置信度 {n}%',
+  ocrFrom: '来自',
+  ocrOffline: '识别在本机进行，不上传任何图片。',
+  ocrTooLarge: '图片太大（超过 {mb} MB），请先裁剪或压缩。',
+  ocrUnsupported: '无法读取这个文件，请选择 PNG / JPG / WebP / BMP 图片。',
+  ocrMissingEngine: '此版本未包含 OCR 组件，无法识别图片。',
+  ocrNeedAmount: '没能读出金额，请手动填写。',
 
   // Transactions list
   txpTitle: '交易明细',

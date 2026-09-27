@@ -5,6 +5,8 @@ import { useUiStore } from '@renderer/store/ui'
 import { useAction, useAsync } from '@renderer/hooks/useData'
 import { Icon } from '@renderer/components/Icon'
 import { Money } from '@renderer/components/Money'
+import { OcrDialog } from '@renderer/components/OcrDialog'
+import type { OcrDraft } from '@renderer/components/OcrDialog'
 import { formatMoney, getCurrency, parseAmountToMinor } from '@shared/lib/money'
 import { addDays, today } from '@shared/lib/dates'
 import { T, categoryLabel, dateHeadingZh, transactionTypeLabel } from '@shared/lib/i18n'
@@ -16,6 +18,22 @@ import type { AccountWithBalance, Category, TransactionWithRefs } from '@shared/
  * One dialog handles all three kinds, because the user picks the kind first and
  * the fields then differ only slightly. Splitting this into three separate forms
  * would triple the validation logic and let them drift apart.
+ *
+ * BATCH ENTRY (v1.5.2)
+ * ---------------------
+ * The same form, plus a list. "再记一笔" files what is currently typed into the list and clears
+ * the fields for the next one, so an evening's receipts go in without the dialog closing and
+ * reopening between each. The list is committed in one action.
+ *
+ * What is deliberately SHARED rather than per-row: account, kind, date and time. Those are the
+ * fields a person entering last night's spending sets once — "all of these came off the Maybank
+ * card, all on the 25th" — and making them per-row would turn four clicks into four clicks
+ * times nine. They are read from the top of the form at the moment a row is filed, so changing
+ * them mid-session affects the rows filed afterwards, which is what the hint says.
+ *
+ * What is deliberately PER-ROW: amount, merchant, note, category. Those are the things that
+ * actually differ between two receipts from the same evening, and they are all reachable from
+ * the keyboard alone.
  *
  * MONEY HANDLING: the amount field is a TEXT input converted with
  * `parseAmountToMinor`, which does string arithmetic. `parseFloat('18.50') * 100`
@@ -44,6 +62,29 @@ interface FormState {
   note: string
 }
 
+/**
+ * One line waiting to be saved.
+ *
+ * Every value is captured at the moment the row is filed, never read back from the form: the
+ * list has to survive the user changing the shared date or account for the NEXT entry without
+ * silently rewriting the ones already in it.
+ */
+interface DraftRow {
+  /** Stable key for React; also the order the rows were added in. */
+  key: number
+  kind: 'income' | 'expense'
+  amountMinor: number
+  currency: string
+  accountId: number
+  accountName: string
+  categoryId: number | null
+  categoryName: string | null
+  date: string
+  time: string | null
+  merchant: string | null
+  note: string | null
+}
+
 /** Quick-date buttons, because most entries are for today or yesterday. */
 const QUICK_DATES: Array<{ label: string; offset: number }> = [
   { label: T.today, offset: 0 },
@@ -70,6 +111,7 @@ export function AddTransactionDialog(): React.JSX.Element | null {
   const dialog = useUiStore((state) => state.transactionDialog)
   const close = useUiStore((state) => state.closeTransactionDialog)
   const refreshData = useAppStore((state) => state.refreshData)
+  const pushToast = useAppStore((state) => state.pushToast)
   const dateFormat = useAppStore((state) => state.settings?.dateFormat ?? 'DD MMM YYYY')
   const { run, pending } = useAction()
 
@@ -83,6 +125,10 @@ export function AddTransactionDialog(): React.JSX.Element | null {
   const [form, setForm] = useState<FormState>(emptyForm)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [formError, setFormError] = useState<string | null>(null)
+  /** Lines filed but not yet saved. Empty means the dialog is in plain single-entry mode. */
+  const [drafts, setDrafts] = useState<DraftRow[]>([])
+  const [ocrOpen, setOcrOpen] = useState(false)
+  const draftKeyRef = useRef(0)
 
   const amountRef = useRef<HTMLInputElement>(null)
 
@@ -98,6 +144,10 @@ export function AddTransactionDialog(): React.JSX.Element | null {
 
     setFieldErrors({})
     setFormError(null)
+    // The pending list belongs to one sitting. Reopening the dialog starts a fresh one rather
+    // than silently resuming somebody's half-finished batch from an hour ago.
+    setDrafts([])
+    setOcrOpen(false)
 
     if (dialog.kind === 'create') {
       const base = emptyForm()
@@ -152,10 +202,23 @@ export function AddTransactionDialog(): React.JSX.Element | null {
     return (categories ?? []).filter((category) => category.type === form.kind)
   }, [categories, form.kind])
 
+  /*
+    The pending list's running total.
+
+    A hook, so it has to live ABOVE the `if (!open) return null` below: a hook that runs only when
+    the dialog is open changes the number of hooks between renders, which React rejects outright
+    ("Rendered more hooks than during the previous render") and which blanked the whole app the
+    first time this was written the other way round.
+  */
+  const draftTotal = useMemo(() => drafts.reduce((sum, row) => sum + row.amountMinor, 0), [drafts])
+
   if (!open) return null
 
   const isEditing = dialog.kind === 'edit' || dialog.kind === 'editTransfer'
   const isTransfer = form.kind === 'transfer'
+  /** The pending list only exists for creating ordinary transactions. */
+  const batchAvailable = !isEditing && !isTransfer
+  const batchActive = batchAvailable && drafts.length > 0
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]): void {
     setForm((previous) => ({ ...previous, [key]: value }))
@@ -185,6 +248,162 @@ export function AddTransactionDialog(): React.JSX.Element | null {
 
     setFieldErrors(errors)
     return Object.keys(errors).length > 0 ? T.txdErrFixFields : null
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* batch entry                                                        */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * File the current form into the pending list and clear it for the next entry.
+   *
+   * Deliberately a SEPARATE action from saving, decided by the user rather than inferred: a
+   * form that files itself on submit makes "I am done" and "I have one more" the same gesture,
+   * and there is no way to save the last one without also opening an empty row.
+   *
+   * Everything the row needs is read from the form NOW. Reading it at save time instead would
+   * mean that changing the date for the next receipt silently re-dated the ones already queued.
+   * The fields are cleared but the SHARED ones — account, kind, date, time — deliberately are
+   * not, because they are what the next receipt almost certainly has too.
+   */
+  function fileDraft(): boolean {
+    const errors: Record<string, string> = {}
+    const minor = parseAmountToMinor(form.amountText, entryCurrency)
+    if (form.amountText.trim() === '') errors.amountText = T.txdErrAmountRequired
+    else if (minor === null) errors.amountText = T.txdErrAmountInvalid
+    else if (minor <= 0) errors.amountText = T.txdErrAmountPositive
+    if (form.accountId === null) errors.accountId = T.txdErrAccountRequired
+    if (!form.date) errors.date = T.txdErrDateRequired
+
+    setFieldErrors(errors)
+    if (Object.keys(errors).length > 0 || minor === null) {
+      setFormError(form.accountId === null ? T.txdBatchNeedAccount : T.txdErrFixFields)
+      return false
+    }
+
+    const chosen = (categories ?? []).find((category) => category.id === form.categoryId) ?? null
+    draftKeyRef.current += 1
+    setDrafts((previous) => [
+      ...previous,
+      {
+        key: draftKeyRef.current,
+        kind: form.kind === 'income' ? 'income' : 'expense',
+        amountMinor: minor,
+        currency: entryCurrency,
+        accountId: form.accountId as number,
+        accountName: account?.name ?? '',
+        categoryId: form.categoryId,
+        categoryName: chosen ? chosen.name : null,
+        date: form.date,
+        time: form.time || null,
+        merchant: form.merchant.trim() || null,
+        note: form.note.trim() || null
+      }
+    ])
+
+    setFormError(null)
+    // Keep the shared fields; clear the per-row ones.
+    setForm((previous) => ({ ...previous, amountText: '', merchant: '', note: '', categoryId: null }))
+    setFieldErrors({})
+    window.setTimeout(() => amountRef.current?.focus(), 20)
+    return true
+  }
+
+  /**
+   * Turn recognised receipts into pending rows.
+   *
+   * The account and the kind come from the form — the recogniser cannot know which card was used —
+   * so a receipt fills in what it actually read (amount, date, time, shop) and leaves the rest to
+   * the fields already on screen. That split is the point: the software supplies the numbers it
+   * saw in the image, and the user supplies the context only they have.
+   *
+   * A receipt whose currency differs from the account's is still filed, with ITS OWN currency
+   * on the row, because the amount is what the shop charged. Converting it here would silently
+   * invent an exchange rate that the ledger would then store as if it were the real amount.
+   */
+  function applyOcr(rows: OcrDraft[]): void {
+    if (form.accountId === null) {
+      setOcrOpen(false)
+      setFormError(T.txdBatchNeedAccount)
+      return
+    }
+    const kind: 'income' | 'expense' = form.kind === 'income' ? 'income' : 'expense'
+
+    setDrafts((previous) => {
+      const next = [...previous]
+      for (const row of rows) {
+        draftKeyRef.current += 1
+        next.push({
+          key: draftKeyRef.current,
+          kind,
+          amountMinor: row.amountMinor,
+          currency: row.currency ?? entryCurrency,
+          accountId: form.accountId as number,
+          accountName: account?.name ?? '',
+          categoryId: form.categoryId,
+          categoryName:
+            (categories ?? []).find((category) => category.id === form.categoryId)?.name ?? null,
+          date: row.date ?? form.date,
+          time: row.time,
+          merchant: row.merchant,
+          note: null
+        })
+      }
+      return next
+    })
+
+    // The last receipt's date becomes the form's date, so a pile from the same evening files the
+    // next batch on the right day without re-picking it.
+    const last = rows[rows.length - 1]
+    if (last?.date) setForm((previous) => ({ ...previous, date: last.date as string }))
+    setOcrOpen(false)
+    setFormError(null)
+  }
+
+  /**
+   * Save every pending row, in order.
+   *
+   * Marked `type="button"` in the markup so this is not a form submit: the browser would
+   * otherwise also run the single-entry handler, and the same transaction would be written
+   * twice.
+   *
+   * Sequential rather than parallel. There is no bulk endpoint, and firing nine writes at one
+   * SQLite connection at once buys nothing but lock contention; more importantly, stopping at
+   * the first failure is only meaningful if the order is knowable, so the message can say which
+   * row failed and everything before it is genuinely on disk.
+   */
+  async function handleSaveBatch(event: React.MouseEvent): Promise<void> {
+    event.preventDefault()
+    if (drafts.length === 0) return
+    setFormError(null)
+
+    let done = 0
+    for (const row of drafts) {
+      try {
+        await window.api.transactionsCreate({
+          accountId: row.accountId,
+          type: row.kind,
+          amount: row.amountMinor,
+          categoryId: row.categoryId,
+          date: row.date,
+          time: row.time,
+          merchant: row.merchant,
+          note: row.note
+        })
+        done += 1
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : T.txdErrSaveFailed
+        if (done > 0) refreshData()
+        setDrafts((previous) => previous.slice(done))
+        setFormError(T.txdBatchPartial.replace('{done}', String(done)).replace('{failed}', String(done + 1)).replace('{reason}', reason))
+        pushToast({ tone: 'error', message: reason, detail: T.txdBatchPartial.replace('{done}', String(done)).replace('{failed}', String(done + 1)).replace('{reason}', reason) })
+        return
+      }
+    }
+
+    pushToast({ tone: 'success', message: T.txdBatchSaved.replace('{n}', String(done)) })
+    refreshData()
+    close()
   }
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
@@ -281,10 +500,77 @@ export function AddTransactionDialog(): React.JSX.Element | null {
                 ? T.txdTitleCreateTransfer
                 : T.txdTitleCreate}
           </h2>
-          <button type="button" className="btn btn-ghost btn-icon" onClick={close} aria-label={T.txdCloseDialog}>
-            <Icon name="close" />
-          </button>
+          <div className="tx-dialog__headactions">
+            {batchActive ? (
+              <span className="tx-batch-badge" title={T.txdBatchSharedNote}>
+                <Icon name="inbox" size={13} />
+                {T.txdBatchCount.replace('{n}', String(drafts.length))}
+              </span>
+            ) : null}
+            <button type="button" className="btn btn-ghost btn-icon" onClick={close} aria-label={T.txdCloseDialog}>
+              <Icon name="close" />
+            </button>
+          </div>
         </header>
+
+        {/* ---------------- the pending list ---------------- */}
+        {batchAvailable ? (
+          <section className="tx-batch" aria-label={T.txdBatchPending}>
+            {drafts.length === 0 ? (
+              <p className="tx-batch__empty muted">{T.txdBatchEmpty}</p>
+            ) : (
+              <>
+                <div className="tx-batch__head">
+                  <span className="tx-batch__label">{T.txdBatchPending}</span>
+                  <span className="muted tx-batch__hint">{T.txdBatchSharedNote}</span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      if (window.confirm(T.txdBatchClearConfirm.replace('{n}', String(drafts.length)))) {
+                        setDrafts([])
+                      }
+                    }}
+                  >
+                    {T.txdBatchClear}
+                  </button>
+                </div>
+                <ul className="tx-batch__list">
+                  {drafts.map((row) => (
+                    <li key={row.key} className="tx-batch__row">
+                      <span className="tx-batch__time num">{row.time ?? <span className="muted">—</span>}</span>
+                      <span className="tx-batch__body">
+                        <span className="truncate tx-batch__title">
+                          {row.merchant ?? (row.categoryName ? categoryLabel(row.categoryName) : T.klineUnnamed)}
+                        </span>
+                        <span className="muted truncate tx-batch__meta">
+                          {[categoryLabel(row.categoryName), row.accountName, row.date].filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                      <span className={`tx-batch__amount num ${row.kind === 'income' ? 'is-up' : 'is-down'}`}>
+                        {row.kind === 'income' ? '+' : '−'}
+                        {formatMoney(row.amountMinor, row.currency)}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-icon btn-sm"
+                        aria-label={T.txdBatchRemove}
+                        title={T.txdBatchRemove}
+                        onClick={() => setDrafts((previous) => previous.filter((entry) => entry.key !== row.key))}
+                      >
+                        <Icon name="close" size={14} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="tx-batch__total">
+                  <span className="muted">{T.txdBatchSum}</span>
+                  <b className="num">{formatMoney(draftTotal, entryCurrency)}</b>
+                </div>
+              </>
+            )}
+          </section>
+        ) : null}
 
         {!isEditing ? (
           <div className="tx-kinds" role="tablist" aria-label={T.txdKindLabel}>
@@ -514,20 +800,70 @@ export function AddTransactionDialog(): React.JSX.Element | null {
             <button type="button" className="btn btn-secondary" onClick={close} disabled={pending}>
               {T.cancel}
             </button>
-            <button type="submit" className="btn btn-primary" disabled={pending}>
-              {pending
-                ? T.txdSaving
-                : isEditing
-                  ? T.txdSaveChanges
-                  : isTransfer
-                    ? T.txdSaveTransfer
-                    : T.txdSaveTransaction}
-            </button>
+
+            {batchAvailable ? (
+              <button
+                type="button"
+                className="btn btn-secondary tx-batch-add"
+                title={T.txdBatchAddHint}
+                disabled={pending}
+                onClick={() => fileDraft()}
+              >
+                <Icon name="plus" size={15} />
+                {T.txdBatchAdd}
+              </button>
+            ) : null}
+
+            {!isEditing && !isTransfer ? (
+              <button
+                type="button"
+                className="btn btn-secondary tx-ocr-open"
+                title={T.ocrButtonHint}
+                disabled={pending}
+                onClick={() => setOcrOpen(true)}
+              >
+                <Icon name="receipt" size={15} />
+                {T.ocrButton}
+              </button>
+            ) : null}
+
+            {batchActive ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={pending}
+                onClick={(event) => void handleSaveBatch(event)}
+              >
+                {pending ? T.txdSaving : T.txdBatchSaveAll.replace('{n}', String(drafts.length))}
+              </button>
+            ) : (
+              <button type="submit" className="btn btn-primary" disabled={pending}>
+                {pending
+                  ? T.txdSaving
+                  : isEditing
+                    ? T.txdSaveChanges
+                    : isTransfer
+                      ? T.txdSaveTransfer
+                      : T.txdSaveTransaction}
+              </button>
+            )}
           </footer>
         </form>
       </div>
 
       <style>{DIALOG_CSS}</style>
+
+      {ocrOpen ? (
+        <OcrDialog
+          entryCurrency={entryCurrency}
+          defaultCategoryId={form.categoryId}
+          defaultCategoryName={
+            (categories ?? []).find((category) => category.id === form.categoryId)?.name ?? null
+          }
+          onApply={applyOcr}
+          onClose={() => setOcrOpen(false)}
+        />
+      ) : null}
     </div>
   )
 }
@@ -584,6 +920,61 @@ const DIALOG_CSS = `
   gap: var(--space-4);
   margin-bottom: var(--space-5);
 }
+.tx-dialog__headactions { display: flex; align-items: center; gap: var(--space-2); }
+.tx-batch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--accent-text);
+  background: var(--accent-subtle);
+  border-radius: var(--radius-full);
+  padding: 3px 9px;
+}
+
+/* ---- the pending list (batch entry) ---- */
+.tx-batch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-inset);
+  padding: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+.tx-batch__empty { margin: 0; font-size: var(--text-xs); text-align: center; padding: var(--space-2) 0; }
+.tx-batch__head { display: flex; align-items: baseline; gap: var(--space-2); }
+.tx-batch__label { font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--text-primary); }
+.tx-batch__hint { flex: 1; min-width: 0; font-size: var(--text-2xs); }
+.tx-batch__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.tx-batch__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  font-size: var(--text-xs);
+}
+.tx-batch__time { flex: 0 0 42px; color: var(--text-secondary); font-size: var(--text-2xs); }
+.tx-batch__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tx-batch__title { color: var(--text-primary); font-weight: var(--weight-medium); }
+.tx-batch__meta { font-size: var(--text-2xs); }
+.tx-batch__amount { flex: 0 0 auto; font-weight: var(--weight-semibold); }
+.tx-batch__amount.is-up { color: var(--income); }
+.tx-batch__amount.is-down { color: var(--expense); }
+.tx-batch__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+}
+.tx-batch-add { display: inline-flex; align-items: center; gap: var(--space-1); }
 .tx-dialog__title {
   font-size: var(--text-lg);
   font-weight: var(--weight-semibold);

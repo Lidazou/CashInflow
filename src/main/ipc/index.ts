@@ -24,6 +24,8 @@ import type {
   ImportPresetId,
   IpcDateRange,
   KlineGranularity,
+  OcrResult,
+  OcrStatus,
   RecurringRuleInput,
   StatisticsGranularity,
   SubscriptionInput,
@@ -563,6 +565,65 @@ export function registerIpcHandlers(context: IpcContext): void {
       return { canceled: false, filePath, fileName: basename(filePath), kind }
     }
   )
+
+  /*
+    Receipt OCR (v1.5.2).
+
+    The image path is checked to be a real local file before the recogniser sees it: the renderer
+    only ever receives paths from `ocr:pickImage`, but it is the untrusted side of the bridge, so
+    a path arriving here is treated as a claim rather than a fact. Nothing about the recognition
+    result is trusted either — this returns TEXT, and the renderer parses it with a pure function
+    it can re-run and correct.
+  */
+  handle<void[], OcrStatus>(IPC_CHANNELS.ocrStatus, context, {}, async () => svc().ocr.status())
+
+  handle<void[], { canceled: boolean; filePath: string | null; fileName: string | null; sizeBytes: number | null }>(
+    IPC_CHANNELS.ocrPickImage,
+    context,
+    {},
+    async () => {
+      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? undefined
+      const result = await dialog.showOpenDialog(window!, {
+        title: 'Select a receipt image',
+        properties: ['openFile'],
+        filters: [
+          { name: 'Images (PNG, JPG, WebP, BMP)', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'tif', 'tiff'] },
+          { name: 'All files', extensions: ['*'] }
+        ]
+      })
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true, filePath: null, fileName: null, sizeBytes: null }
+      }
+
+      const filePath = result.filePaths[0]
+      const { exists, sizeBytes } = svc().ocr.inspect(filePath)
+      if (!exists) throw new AppError('FILE_IO', 'That file no longer exists.')
+      return { canceled: false, filePath, fileName: basename(filePath), sizeBytes }
+    }
+  )
+
+  handle<[string], OcrResult>(IPC_CHANNELS.ocrRecognize, context, {}, async (filePath) => {
+    if (typeof filePath !== 'string' || !filePath) {
+      throw new AppError('VALIDATION', 'No image was selected.')
+    }
+    const { exists } = svc().ocr.inspect(filePath)
+    if (!exists) throw new AppError('FILE_IO', 'That image no longer exists.')
+
+    try {
+      return await svc().ocr.recognize(filePath)
+    } catch (error) {
+      /*
+        Recognition failures are reported as themselves rather than as a generic error.
+
+        "engine-missing", "image-too-large" and "recognize-timeout" are three different problems
+        with three different answers, and flattening them into "OCR failed" leaves the user with
+        nothing to act on.
+      */
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new AppError('INTERNAL', reason)
+    }
+  })
 
   handle<[string, ImportPresetId], unknown>(IPC_CHANNELS.importParse, context, {}, async (filePath, presetId) => {
     if (typeof filePath !== 'string' || !filePath) throw new AppError('VALIDATION', 'No file was selected.')

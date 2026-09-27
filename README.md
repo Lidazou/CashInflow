@@ -8,7 +8,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white">
   <img alt="Release" src="https://img.shields.io/github/v/release/Lidazou/CashInflow?color=16A34A&label=release">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-348%20passing-16A34A">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-370%20passing-16A34A">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white">
 </p>
@@ -25,7 +25,7 @@
 界面按交易软件的观感重做：近黑分层背景、发丝级描边代替阴影、金额一律等宽对齐，
 **默认深色**，浅色主题保留。
 
-它和普通记账 App 的区别在5个地方。
+它和普通记账 App 的区别在6个地方。
 
 ---
 
@@ -154,45 +154,67 @@ Y 轴刻度、标记密度、十字光标全部由它重新算出来。
 
 ---
 
-### 2️⃣ 首页可以切换统计周期：自然月 / 结算周期 / 自定义区间
+### 2️⃣ 晚上一次性录入：批量记一笔 + 账单拍照识别
 
-**这是整个软件最核心的设计。**
+#### 一次记多笔
 
-大多数记账软件的首页只会告诉你「本月」——而「本月」到底是哪一个月，是软件替你决定的。
+「记一笔」对话框里多了一个 **「+ 再记一笔」**。填好一笔点它，这一笔进「待保存」列表，输入框清空，
+光标回到金额框 —— 接着记下一笔，不用关窗口、不用重开。
 
-CashInflow 把它交给你：
+![批量录入](docs/images/v152-batch.png)
 
-![三种统计周期](docs/images/period-modes.png)
+```
+待保存 3 笔                                    清空列表
+  12:14  Lunch      未分类 · Maybank · 09-27    −RM 12.50
+  15:30  Coffee     未分类 · Maybank · 09-27    −RM 4.80
+  19:05  Groceries  未分类 · Maybank · 09-27    −RM 120.00
+                                        合计    RM 137.30
+```
 
-| 模式 | 统计哪一段 | 什么时候用 |
-|---|---|---|
-| **自然月** | 1 日 → 月末 | 对账、报销、和家里核对账单 |
-| **结算周期** | 你设定的起始日 → 下个月的前一天 | 生活费 5 号到账？那就是 8月5日 – 9月4日 |
-| **自定义区间** | 你选的任意起止日期 | 一个学期、一趟旅行、两次兼职之间 |
+- **账户、日期、类型、时间由上方统一设定**，会自动应用到列表里每一笔 —— 晚上补录时这几个字段
+  通常整批都一样，做成逐行填写只会把 4 次点击变成 4×9 次。
+- **金额、商家、备注、分类是逐行的**，因为它们才是真正会变的东西。
+- 每一行都可以单独删掉，也可以整批清空。
+- 点「全部保存（N 笔）」一次性写入；**中途出错会明确告诉你第几笔失败、哪些已经存进去了**，
+  而不是含糊地说「保存失败」。
 
-**三种模式共用同一块首页**——同一个圆环、同一组收入/支出/结余、同一个支出排行。
-切换周期只是换一个问题，不是换一个页面。
+#### 从照片识别账单
 
-圆环中间的**本期结余**是这一段区间的收入减支出；下面单独一行是账户**余额**，
-也就是你现在实际有多少钱。两者不是一回事：一笔期初余额不是收入，所以一段没有
-任何交易的区间，本期结余确实是 0，但余额照样在那里。这种情况圆环中间会写
-「本周期无收支」而不是显示一个看起来像加载失败的 ¥0.00。
+![识别账单](docs/images/v152-ocr.png)
 
-首页是两列：**左边是你的账**（圆环、收支、结余、总余额），**右边是最近发生了什么**
-（上面「今天」，下面「支出排行」）。两块都是交易列表，同一列从上往下读比并排三栏
-更好扫，圆环也因此拿到了更宽的卡片。
+点「识别账单照片」，选一张截图或直接把它拖进窗口，本机识别出金额、日期、时间和商家，
+按**置信度**列出候选，每个候选都告诉你**它是从哪一行读出来的**：
 
-首页点一下就能切：
+```
+识别到 1 条候选        置信度 92%                0.7s
+☑ RM 172.50                                     99%
+  2026-09-25 · 12:14 · MAYBANK
+  来自 合 计 RM 172.50
+```
 
-| 自然月 | 结算周期 | 自定义区间 |
-|---|---|---|
-| ![自然月](docs/images/dashboard-natural.png) | ![结算周期](docs/images/dashboard.png) | ![自定义区间](docs/images/dashboard-custom.png) |
+点「填入这张」，它就变成待保存列表里的一行，和其他手工录入的行完全一样 ——
+可以改、可以删、可以继续加，最后一起保存：
 
-> **为什么不是简单地把自然月改成「起始日 = 1」？**
->
-> 因为那样的话，想看一眼日历月就得先改设置、再改回来。
-> 现在的做法是：**「自然月」只是这一次请求的起始日**，你保存的结算起始日不会被改写。
-> 切换模式会记住，下次打开还是你上次看的那一段。
+![识别结果进入待保存列表](docs/images/v152-ocr-applied.png)
+
+- **默认只勾选最可信的一条**，其余要你自己选 —— 一个「全部勾上」的默认值会把「请核对」
+  变成「请确认」，然后用户就不会核对了。
+- 识别到的原文可以展开查看，金额读错时你能看到它读的是哪一行。
+- 币种和账户不同时会明确提示，**不会偷偷按某个汇率换算后当成原金额存进去**。
+
+> **识别完全在本机完成，图片不会上传。** 引擎是随 App 打包的 tesseract.js（WASM），
+> 中文 + 英文语言包也在安装包里。整个 App 唯一的联网行为仍然只有汇率查询 ——
+> 一张银行账单的照片，不该因为「顺手调个云 API」就离开你的电脑。
+
+**为什么不用云端 OCR API：** 免 key 的公共接口要么有速率限制、要么随时关停，而收费的要
+按次计费、并且意味着把账单照片传给第三方。对一个「本地优先」的记账软件来说，
+**离线是功能本身，不是妥协**。代价是安装包大了约 55 MB。
+
+#### 修改已有交易
+
+交易列表每一行**常驻一个编辑按钮**（以前只在鼠标悬停时才出现，结果是没人发现这个功能存在），
+点开就是同一个表单，字段已经填好。总览页「今天」列表里的每一行也加了同样的编辑入口。
+交易详情弹窗里的「编辑」保持不变。
 
 #### 生活费周期：为什么最多只能设到 28 日
 
@@ -233,7 +255,49 @@ CashInflow 把它交给你：
 
 ---
 
-### 3️⃣ 真正的多币种，切换一下所有数字立刻变
+### 3️⃣ 首页可以切换统计周期：自然月 / 结算周期 / 自定义区间
+
+**这是整个软件最核心的设计。**
+
+大多数记账软件的首页只会告诉你「本月」——而「本月」到底是哪一个月，是软件替你决定的。
+
+CashInflow 把它交给你：
+
+![三种统计周期](docs/images/period-modes.png)
+
+| 模式 | 统计哪一段 | 什么时候用 |
+|---|---|---|
+| **自然月** | 1 日 → 月末 | 对账、报销、和家里核对账单 |
+| **结算周期** | 你设定的起始日 → 下个月的前一天 | 生活费 5 号到账？那就是 8月5日 – 9月4日 |
+| **自定义区间** | 你选的任意起止日期 | 一个学期、一趟旅行、两次兼职之间 |
+
+**三种模式共用同一块首页**——同一个圆环、同一组收入/支出/结余、同一个支出排行。
+切换周期只是换一个问题，不是换一个页面。
+
+圆环中间的**本期结余**是这一段区间的收入减支出；下面单独一行是账户**余额**，
+也就是你现在实际有多少钱。两者不是一回事：一笔期初余额不是收入，所以一段没有
+任何交易的区间，本期结余确实是 0，但余额照样在那里。这种情况圆环中间会写
+「本周期无收支」而不是显示一个看起来像加载失败的 ¥0.00。
+
+首页是两列：**左边是你的账**（圆环、收支、结余、总余额），**右边是最近发生了什么**
+（上面「今天」，下面「支出排行」）。两块都是交易列表，同一列从上往下读比并排三栏
+更好扫，圆环也因此拿到了更宽的卡片。
+
+首页点一下就能切：
+
+| 自然月 | 结算周期 | 自定义区间 |
+|---|---|---|
+| ![自然月](docs/images/dashboard-natural.png) | ![结算周期](docs/images/dashboard.png) | ![自定义区间](docs/images/dashboard-custom.png) |
+
+> **为什么不是简单地把自然月改成「起始日 = 1」？**
+>
+> 因为那样的话，想看一眼日历月就得先改设置、再改回来。
+> 现在的做法是：**「自然月」只是这一次请求的起始日**，你保存的结算起始日不会被改写。
+> 切换模式会记住，下次打开还是你上次看的那一段。
+
+---
+
+### 4️⃣ 真正的多币种，切换一下所有数字立刻变
 
 人民币、马币、新币、美元、港币……同时持有多个币种账户。顶部切换显示货币，
 **首页、交易明细、统计、总账**会一起换算。
@@ -251,7 +315,7 @@ CashInflow 把它交给你：
 
 ---
 
-### 4️⃣ 导入微信 / 支付宝 / 银行账单
+### 5️⃣ 导入微信 / 支付宝 / 银行账单
 
 不用手工录入。导出账单文件，选进来：
 
@@ -264,7 +328,7 @@ CashInflow 把它交给你：
 
 ![记一笔](docs/images/add-transaction.png)
 
-### 5️⃣ 算错的代价是「你照着错的数字做了决定」
+### 6️⃣ 算错的代价是「你照着错的数字做了决定」
 
 金融软件出错的代价不是「不好看」。所以下面这些不是泛泛的「最佳实践」，而是
 具体防住了某类真实 bug 的做法——完整清单见 [优势：数据正确性](#优势数据正确性)：
@@ -445,8 +509,8 @@ Cash      +500.00    转账腿
 
 | 文件 | 说明 |
 |---|---|
-| `CashInflow-1.5.1-x64-setup.exe` | **安装版**。创建开始菜单与桌面快捷方式，并注册卸载项 |
-| `CashInflow-1.5.1-x64-portable.exe` | **免安装单文件版**。直接双击运行，不写注册表、不建快捷方式 |
+| `CashInflow-1.5.2-x64-setup.exe` | **安装版**。创建开始菜单与桌面快捷方式，并注册卸载项 |
+| `CashInflow-1.5.2-x64-portable.exe` | **免安装单文件版**。直接双击运行，不写注册表、不建快捷方式 |
 | `SHA256SUMS.txt` | 上面两个文件的 SHA-256 校验和 |
 
 两个版本功能完全相同，读写同一个数据库。
@@ -561,7 +625,7 @@ powershell -File tools/make-diagram.ps1
 npm test
 ```
 
-**348 个用例，跑真实 SQLite 文件，不用 mock。**
+**370 个用例，跑真实 SQLite 文件，不用 mock。**
 
 | 测试文件 | 覆盖内容 |
 |---|---|
@@ -681,9 +745,25 @@ better-sqlite3 v13 基于 N-API，自带 win32-x64 预编译二进制。而 elec
 **A local-first, multi-currency personal finance manager for Windows**, built for
 Chinese students studying abroad.
 
-**Four things set it apart:**
+**Six things set it apart:**
 
-1. **A switchable reporting period, on one dashboard.** Three modes share the same
+1. **Batch entry, because receipts arrive in piles.** The add-transaction dialog has a
+   "+ one more" button: fill in a row, file it into a pending list, and the form clears for
+   the next one without the dialog ever closing. Account, date and type are set once for the
+   batch — those are what an evening's receipts have in common — while amount, merchant and
+   category stay per-row. One save writes them all, and a half-failed batch says exactly which
+   row failed and what did get written rather than "save failed".
+
+2. **Receipt photos, read on your own machine.** Drop a screenshot or a photo onto the dialog
+   and it comes back as a candidate amount, date, time and shop — with the line each figure was
+   read from, and only the most confident candidate pre-selected, because a "select all"
+   default turns "please check" into "please confirm" and then nobody checks. Recognition is a
+   bundled tesseract.js WASM engine with Chinese and English language packs: **no image leaves
+   the computer**, and the app's only network call is still the exchange-rate lookup. That is
+   what justifies ~55 MB of installer instead of calling a free cloud OCR endpoint — for a
+   local-first finance app, offline is the feature, not the compromise.
+
+3. **A switchable reporting period, on one dashboard.** Three modes share the same
    ring, the same income/expense/net figures and the same biggest-expense list:
    a plain calendar month, your own settlement cycle (allowance in on the 5th means
    5 Aug – 4 Sep), or an arbitrary date range for a semester or a trip. Switching
@@ -691,16 +771,16 @@ Chinese students studying abroad.
    month starting on the 3rd reports that you have spent ¥0, which is both true and
    useless.
 
-2. **Real multi-currency.** Hold CNY, MYR, SGD, USD, HKD and more. Switch the
+4. **Real multi-currency.** Hold CNY, MYR, SGD, USD, HKD and more. Switch the
    display currency and every figure re-converts. Live rates come from three free
    key-less providers tried in order, cached in SQLite, and fully usable offline.
    Switching currency never modifies a stored amount.
 
-3. **Statement import.** WeChat Pay, Alipay (GBK-encoded, 24-line preamble),
+5. **Statement import.** WeChat Pay, Alipay (GBK-encoded, 24-line preamble),
    Maybank, CIMB, and any generic CSV/XLSX, with duplicate detection that lets two
    genuine same-day purchases through while catching a re-import of the same file.
 
-4. **A semester budget, not just a month.** Point the dashboard at arbitrary dates,
+6. **A semester budget, not just a month.** Point the dashboard at arbitrary dates,
    enter what you brought with you, and see spend against it plus a pace projection
    that answers the only question that matters: at this rate, will it last?
 
@@ -734,7 +814,7 @@ rather than silently treated as 1:1.
 exchange-rate lookup; the renderer is forbidden from making any outbound
 connection by its Content-Security-Policy.
 
-**348 tests** run against a real SQLite file, including the specification's
+**370 tests** run against a real SQLite file, including the specification's
 acceptance criteria as executable tests.
 
 ---

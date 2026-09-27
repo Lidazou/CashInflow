@@ -1,6 +1,6 @@
 {
   "name": "cashinflow",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "CashInflow — a local-first multi-currency personal finance manager for Windows. Electron + React + SQLite.",
   "main": "./out/main/index.js",
   "author": "CashInflow",
@@ -26,8 +26,12 @@
     "dist:dir": "npm run rebuild && npm run build && electron-builder --win --dir --config electron-builder.yml"
   },
   "dependencies": {
+    "@tesseract.js-data/chi_sim": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
     "better-sqlite3": "^13.0.3",
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "tesseract.js": "^7.0.0",
+    "tesseract.js-core": "^6.1.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",

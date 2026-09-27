@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 import {
   cleanCell,
   findHeaderRow,
@@ -9,7 +9,7 @@ import {
   parseStatementDate,
   sniffDelimiter,
   stripBom
-} from '@main/services/csv'
+} from '@shared/lib/csv'
 
 /**
  * Parser tests (spec §38 "Import").

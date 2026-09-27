@@ -33,7 +33,24 @@ files:
 # cannot quietly remove the behaviour this build depends on.
 asar: true
 asarUnpack:
-  - node_modules/better-sqlite3/**
+  # -------------------------------------------------------------------------
+  # ALL of node_modules, not a list of packages.
+  #
+  # A child process cannot load a script from inside app.asar — Node reads it as a file, and an
+  # archive is not a directory — so the OCR worker and everything it `require`s must exist on
+  # disk as real files. Naming the three obvious packages is not enough: `tesseract.js` requires
+  # `regenerator-runtime`, electron-builder's smartUnpack does not follow that transitively, and
+  # the packaged app then failed with "Require stack: ...tesseract.js/src/index.js" and no useful
+  # message about which module was missing.
+  #
+  # Unpacking the whole tree removes that whole class of failure and costs almost nothing: the
+  # dependencies that actually matter here are tiny, the source is still compressed inside
+  # app.asar for everything that does not need a real path, and electron-builder hoists the
+  # unpacked copies rather than duplicating them. The measured installer growth from v1.5.1 to
+  # v1.5.2 is entirely the ~50 MB of WASM engine and language data, which this build carries by
+  # design.
+  - node_modules/**
+  - out/main/ocr-worker.cjs
 buildDependenciesFromSource: false
 
 win:

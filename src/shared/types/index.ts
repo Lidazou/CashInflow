@@ -868,6 +868,43 @@ export interface KlineSeries {
 }
 
 // ---------------------------------------------------------------------------
+// Receipt OCR (v1.5.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether this build can read a receipt at all.
+ *
+ * `available: false` is a real state rather than a defensive one: the recognition engine is an
+ * optional dependency, so a build without it has to say so where the user would hand it a
+ * photograph, instead of failing at that moment.
+ */
+export interface OcrStatus {
+  available: boolean
+  /** Language packs present, e.g. ['chi_sim', 'eng']. */
+  languages: string[]
+  /** Why it is unavailable, when it is. */
+  reason: string | null
+  /** True once the language data has been loaded once, so the UI can warn about the wait. */
+  warm: boolean
+}
+
+/**
+ * What one image turned into.
+ *
+ * `text` is the raw recognition result, kept in full and shown on request. It is the only honest
+ * way to explain a wrong amount: the user can see the line the parser read, rather than being
+ * handed a number with no provenance.
+ */
+export interface OcrResult {
+  text: string
+  /** The recogniser's own 0..100 confidence, or null when it reported none. */
+  confidence: number | null
+  languages: string[]
+  /** Milliseconds spent recognising, so the interface can set expectations. */
+  elapsedMs: number
+}
+
+// ---------------------------------------------------------------------------
 // Search
 // ---------------------------------------------------------------------------
 

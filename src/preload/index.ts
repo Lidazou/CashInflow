@@ -135,6 +135,11 @@ const api = {
   customPeriodsDelete: (id: number) => invoke(IPC_CHANNELS.customPeriodsDelete, id),
   customPeriodStats: (input: unknown) => invoke(IPC_CHANNELS.customPeriodStats, input),
 
+  // --- receipt OCR (v1.5.2) ----------------------------------------------
+  ocrStatus: () => invoke(IPC_CHANNELS.ocrStatus),
+  ocrPickImage: () => invoke(IPC_CHANNELS.ocrPickImage),
+  ocrRecognize: (filePath: string) => invoke(IPC_CHANNELS.ocrRecognize, filePath),
+
   // --- import / export ---------------------------------------------------
   importPickFile: () => invoke(IPC_CHANNELS.importPickFile),
   importParse: (filePath: string, presetId: string) => invoke(IPC_CHANNELS.importParse, filePath, presetId),

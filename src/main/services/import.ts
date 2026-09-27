@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+﻿import { createHash } from 'node:crypto'
 import { readFileSync, existsSync, statSync } from 'node:fs'
 import { extname, basename } from 'node:path'
 import type { Database as SqliteDatabase } from 'better-sqlite3'
@@ -28,7 +28,7 @@ import {
   parseStatementDate,
   sniffDelimiter,
   stripBom
-} from './csv'
+} from '@shared/lib/csv'
 import {
   ALIPAY_EXCLUDED_STATUS,
   ALIPAY_REFUND_STATUS,
