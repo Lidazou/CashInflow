@@ -8,7 +8,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white">
   <img alt="Release" src="https://img.shields.io/github/v/release/Lidazou/CashInflow?color=16A34A&label=release">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-279%20passing-16A34A">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-348%20passing-16A34A">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white">
 </p>
@@ -59,14 +59,68 @@
 在一根蜡烛里能直接分辨出来，不用把鼠标移上去。横线画在真实余额位置而不是把实体等分，
 所以线和线之间的距离是有金额含义的。
 
-鼠标移到某条横线上会高亮它，并在下方显示那一笔的：时间（**没记录时间就写「时间未记录」，
-不伪造 00:00**）、商家、分类、账户、备注、金额，以及成交后的余额。点它直接打开
-**既有的交易详情抽屉**，返回后仍在同一根蜡烛上。
+鼠标移到某条横线上会高亮它，并弹出一张跟随光标的浮动卡片，显示那一笔的：时间（**没记录时间就写
+「时间未记录」，不伪造 00:00**）、商家、分类、账户、备注、金额（保留两位小数），以及**成交前 /
+成交后的余额**。点它直接打开**既有的交易详情抽屉**，返回后仍在同一根蜡烛上。
+
+#### 两个面板，一根时间轴
+
+余额 K 线和下方的活动图是**两个独立的绘图面板**，中间只有一条 1px 分隔线：
+
+```
+┌──────────────────────────────────────────────┐
+│  余额 K 线        开 / 高 / 低 / 收 + MA      │  ≈72%
+├──────────────────────────────────────────────┤  1px
+│  现金活动         收入 / 支出 / 交易           │  ≈28%
+└──────────────────────────────────────────────┘
+   时间轴：只有一条，共享
+```
+
+- **X 轴完全共享**：一个毫秒级的可见区间、一套刻度、一个十字光标。两个面板各自维护时间范围
+  是这块最不能犯的错 —— 上面停在九月、下面还在八月，等于在骗人。
+- **Y 轴各自独立**：余额是存量，活动是流量，不是同一种量。共用一条轴的话，RM 3,000 的工资
+  会把余额压成一条直线。活动图的轴永远从 0 起 —— 流量图不归零就是在歪曲每一根柱子。
+- **绘图也独立**：一个面板一块 canvas，重画柱子不可能弄花蜡烛。
+
+#### 连续缩放，以光标为中心
+
+**滚轮 = 连续缩放，没有档位。** 缩放的本质是改变可见时间范围，蜡烛宽度、间隙、X 轴刻度、
+Y 轴刻度、标记密度、十字光标全部由它重新算出来。
+
+**光标指着的那个时刻会一直待在光标下面。** 指向 9 月 25 日滚轮放大，放大完 9 月 25 日还在
+指针附近，而不是每次都以图表中心缩放。整个过程可以一路从「几年的资金走势」→「某个月」→
+「这一周」→「9 月 25 日」→「12:14 那笔 RM 0.50」不用换图、不用换页面。
+
+| 层级 | 例子 | 看到什么 |
+|---|---|---|
+| 宏观 | 2 年 | 2025 / 2026 |
+| 中观 | 3 个月 | 09/07 · 09/14 · 09/21 · 09/28 |
+| 微观 | 1 天 | 09:00 · 10:00 · … · 20:00 |
+| 交易 | 1 小时 | 12:00 · 12:04 · … · 12:56 |
+
+**数据库里没有时间就到此为止。** 只有日期、没有时刻的记录，最细只能看到「日」，界面会直接
+说明「这些记录没有交易时间，最细只能看到日」—— 绝不把没时间的记录编造到 09:30 或 12:00 上。
+
+#### Candle 间隙
+
+实体占槽位的 **82%**，间隙 18% —— 是发丝缝，不是走廊。宽度随缩放动态变化（1px ~ 64px），
+所以缩小时蜡烛变窄、放大时变宽，而间隙始终很小。
+
+#### 小额交易：真实位置 + 大命中区
+
+**视觉按真实金额画，交互按最小尺寸给。** 一笔 RM 0.50 相对于 RM 5,000 的余额不到一个像素，
+所以：
+
+- 画出来可能只有 1px，**真实金额绝不被放大**（不会把 RM 0.50 画成 RM 50）；
+- **命中半径 20px**，按「距离鼠标最近的交易」判定；
+- Y 轴按**可见区间**自动缩放，而不是永远从 0 开始 —— 这就是 RM 4.80 能获得真实像素分辨率的原因。
+
+光标指向 12:14 那条线，无论它是 1px 还是 10px，都能 hover、都能点击、都能看到 `−RM 0.50`。
 
 #### 顶部行情区
 
 上排是**余额**（最大）、**净变化**与**百分比**；下面是高 / 低 / 开 / 收；再下面一行是
-收入 / 支出 / 净额 / **交易笔数**。
+收入 / 支出 / 净额 / **交易笔数**。右侧是**可见区间**读数（例如「3个月 · 2026-07-01」）。
 
 **它跟着十字光标走。** 把光标移到历史某天，这一整块就换成那天的数字 —— 并且明确写清
 是哪一天：只有最新一根才写「当前余额」，历史日期写「9月13日 · 收盘」。
@@ -79,28 +133,24 @@
 期初余额、收入、支出、期末余额、净额、笔数，下面是**当天每一笔交易的列表**。
 点列表里任意一条，打开的同样是既有的交易详情抽屉。
 
-#### 周期、区间与缩放
+#### 区间、跳转与 MA
 
 | | |
 |---|---|
-| **周期** | 日K / 周K / 月K。周K 的开盘取本周第一天、收盘取最后一天，最高最低取全周真实极值 |
 | **区间** | 全部 / 5D / 7D / 30D / 90D / 180D / 1Y / 3Y / **自定义**（两个日期输入） |
-| **缩放** | 滚轮，**以光标为中心**，缩小时粒度自动从日变周/月 —— 放大看到的是更多细节，不是把同一张图拉大 |
+| **缩放** | 滚轮，**以光标为中心**，连续无级 |
 | **平移** | 按住拖动 |
 | **跳转** | 日期选择器；那天没有记录时会说明，并落到最近有数据的一天 |
 | **重置** | 回到全部历史 |
 
-#### MA 与副图
+**没有「日K / 周K / 月K」按钮** —— 蜡烛粒度由可见范围推出来，不是从菜单里选的。
 
 **MA5 / MA10 / MA20** 默认开启，**MA60 / MA250** 默认关闭 —— 它们在一年以内的账本上
 只会把走势压平。点「MA」下拉可逐条开关。**数据不够的窗口会显示为禁用并标注「数据不足」，
 不会用 12 个点硬算一条看起来很像的假线。** 图表上方实时显示当前光标位置各条均线的数值。
 
-蜡烛下方是 **Cash Activity 副图**：向上是当天收入、向下是当天支出，量程独立，
-所以 ¥12,000 的余额不会把一杯咖啡压成一条线；也可以切换成「交易笔数」。
-
-> **周K / 月K 不画逐笔横线**：一个月几十笔会糊成一片。这时实体里写「N 笔」，
-> 放大回日级自动恢复逐笔明细。
+**滚动页面时鼠标在图表外，页面照常滚动。** 只有在两个面板内滚轮才会被图表接管（并且调用
+`preventDefault`）—— 不是全局拦截。
 
 ---
 
@@ -233,10 +283,16 @@ CashInflow 把它交给你：
 
 ### 资金 K 线：把首页当看盘软件用
 
-纵轴金额、横轴时间。余额涨绿跌红，每日收支在下方单独量程里画柱，鼠标扫过任意一天
-都会出方框列出当天的交易，旁边是 MA5/10/20/60/250。
+上下两个独立面板（余额 K 线 ≈72%，现金活动 ≈28%），共享一根时间轴。余额涨绿跌红，
+每笔交易在蜡烛内部按**成交后的真实余额**画一条横线；鼠标指向任意一条都能弹出浮动卡片。
 
-![资金 K 线](docs/images/dashboard-kline.png)
+![资金 K 线](docs/images/kline-v151-micro.png)
+
+![缩放后的日内视图](docs/images/kline-v151-zoomed.png)
+
+点开那一笔 `RM 0.50`：
+
+![交易详情](docs/images/kline-v151-detail.png)
 
 ### 统计分析：趋势、构成、日历
 
@@ -265,7 +321,7 @@ MYR     -RM 1,585.80    ≈ -¥ 2,614.35       3 个账户
 
 ### 深色模式
 
-浅色是默认主题。深色模式保持同样的信息层级，不是简单地把背景刷黑。
+深色是默认主题。浅色模式保持同样的信息层级，不是简单地把背景刷白。
 
 ![深色模式](docs/images/dashboard-dark.png)
 
@@ -389,8 +445,8 @@ Cash      +500.00    转账腿
 
 | 文件 | 说明 |
 |---|---|
-| `CashInflow-1.5.0-x64-setup.exe` | **安装版**。创建开始菜单与桌面快捷方式，并注册卸载项 |
-| `CashInflow-1.5.0-x64-portable.exe` | **免安装单文件版**。直接双击运行，不写注册表、不建快捷方式 |
+| `CashInflow-1.5.1-x64-setup.exe` | **安装版**。创建开始菜单与桌面快捷方式，并注册卸载项 |
+| `CashInflow-1.5.1-x64-portable.exe` | **免安装单文件版**。直接双击运行，不写注册表、不建快捷方式 |
 | `SHA256SUMS.txt` | 上面两个文件的 SHA-256 校验和 |
 
 两个版本功能完全相同，读写同一个数据库。
@@ -505,7 +561,7 @@ powershell -File tools/make-diagram.ps1
 npm test
 ```
 
-**279 个用例，跑真实 SQLite 文件，不用 mock。**
+**348 个用例，跑真实 SQLite 文件，不用 mock。**
 
 | 测试文件 | 覆盖内容 |
 |---|---|
@@ -648,6 +704,26 @@ Chinese students studying abroad.
    enter what you brought with you, and see spend against it plus a pace projection
    that answers the only question that matters: at this rate, will it last?
 
+**The K-line is a balance chart, not a stock chart with your money in it.** A price
+candle can only say that something moved; a balance candle can say *why*, because
+every transaction is a labelled event that pushed it. So each entry is drawn as a
+hairline at the exact balance it produced, and the gap between two hairlines is that
+transaction's size — a ¥3,000 salary and a ¥30 lunch are distinguishable inside one
+candle without hovering.
+
+The balance K-line and the cash-activity bars are **two independent panels sharing one
+time axis**: their own heights, their own value axes (the balance axis is fitted to the
+visible window and deliberately does *not* start at zero; the activity axis always
+does), and their own draw passes. Zoom is **continuous and cursor-anchored** — there is
+no 日K/周K/月K menu, and the candle size is derived from the visible time range — so a
+reader scrolls from two years of history into a single day, and from there into
+`12:14 Lunch −RM 0.50`, without switching views. Intraday candles are reconstructed
+from the instants the entries actually happened at; a ledger with no times in it stops
+at the day and says so rather than inventing 09:30.
+
+Small amounts get a 20-pixel hit radius against a marker that may be one pixel tall:
+the visual stays truthful to the money, and aiming is forgiving.
+
 **Correctness is the design goal, not a feature.** Amounts are integers in each
 currency's minor unit, balances are derived rather than stored, transfers are
 written twice and structurally excluded from spending, and cross-currency totals
@@ -658,7 +734,7 @@ rather than silently treated as 1:1.
 exchange-rate lookup; the renderer is forbidden from making any outbound
 connection by its Content-Security-Policy.
 
-**279 tests** run against a real SQLite file, including the specification's
+**348 tests** run against a real SQLite file, including the specification's
 acceptance criteria as executable tests.
 
 ---

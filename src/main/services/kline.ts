@@ -80,6 +80,23 @@ import type {
 export const DEFAULT_MA_WINDOWS: readonly number[] = [5, 10, 20, 60, 250]
 
 /**
+ * The granularities this service can SELECT, coarsest last.
+ *
+ * `KlineGranularity` also carries `hour` and `minute`, which the renderer reaches
+ * when the reader zooms into a single day and the entries in view have real times.
+ * Those are never chosen here — `chooseGranularity` works from a calendar span and
+ * a day-only ledger must never be split into hours — but they are legal inputs, so
+ * the guard has to accept them rather than rejecting a request the chart can serve.
+ */
+export const CALENDAR_GRANULARITIES: readonly KlineGranularity[] = [
+  'day',
+  'week',
+  'month',
+  'quarter',
+  'year'
+]
+
+/**
  * Tooltip rows kept per bucket.
  *
  * A year bucket can legitimately hold thousands of transactions, and shipping all
@@ -129,7 +146,15 @@ export function chooseGranularity(spanDays: number): KlineGranularity {
 }
 
 export function isKlineGranularity(value: unknown): value is KlineGranularity {
-  return value === 'day' || value === 'week' || value === 'month' || value === 'quarter' || value === 'year'
+  return (
+    value === 'day' ||
+    value === 'week' ||
+    value === 'month' ||
+    value === 'quarter' ||
+    value === 'year' ||
+    value === 'hour' ||
+    value === 'minute'
+  )
 }
 
 /**
@@ -146,7 +171,13 @@ function inclusiveDays(from: DateString, to: DateString): number {
   return Math.round((end - start) / 86_400_000) + 1
 }
 
-/** First day of the bucket containing `date`. ISO weeks (Monday) match the app default. */
+/**
+ * First day of the bucket containing `date`. ISO weeks (Monday) match the app default.
+ *
+ * Intraday granularities resolve to the day: this service buckets a calendar series,
+ * and the renderer's sub-day candles are built from the per-transaction balance
+ * markers rather than from anything that could be keyed here.
+ */
 export function bucketStart(date: DateString, granularity: KlineGranularity): DateString {
   switch (granularity) {
     case 'week':
@@ -161,6 +192,8 @@ export function bucketStart(date: DateString, granularity: KlineGranularity): Da
     case 'year':
       return `${date.slice(0, 4)}-01-01`
     case 'day':
+    case 'hour':
+    case 'minute':
     default:
       return date
   }
@@ -184,6 +217,8 @@ export function nextBucketKey(key: DateString, granularity: KlineGranularity): D
     case 'year':
       return addMonths(key, 12)
     case 'day':
+    case 'hour':
+    case 'minute':
     default:
       return addDays(key, 1)
   }
@@ -207,6 +242,8 @@ export function bucketLabel(key: DateString, granularity: KlineGranularity): str
     case 'year':
       return `${key.slice(0, 4)}年`
     case 'day':
+    case 'hour':
+    case 'minute':
     default:
       return `${Number(key.slice(5, 7))}月${Number(key.slice(8, 10))}日`
   }
@@ -440,6 +477,7 @@ export class KlineService {
         granularity: isKlineGranularity(granularity) ? granularity : chooseGranularity(0),
         points: [],
         daily: [],
+        dayMarkers: {},
         maWindows: windows,
         currency,
         from: '',
@@ -550,7 +588,7 @@ export class KlineService {
       bucketKeys.push(key)
     }
 
-    const { transactions: tooltips, markers, dayExtremes } = this.readTooltipTransactions(
+    const { transactions: tooltips, markers, dayMarkers, dayExtremes } = this.readTooltipTransactions(
       resolved,
       firstKey,
       lastDate,
@@ -739,6 +777,7 @@ export class KlineService {
       granularity: resolved,
       points,
       daily,
+      dayMarkers,
       maWindows: windows,
       currency,
       from: firstKey,
@@ -789,6 +828,8 @@ export class KlineService {
   ): {
     transactions: Map<string, KlineTransaction[]>
     markers: Map<string, CashflowTransactionMarker[]>
+    /** The same markers keyed by DAY, for a view that re-buckets locally. */
+    dayMarkers: Record<string, CashflowTransactionMarker[]>
     /** True intraday balance extremes per day, from the marker walk. */
     dayExtremes: Map<string, { high: number; low: number }>
   } {
@@ -935,6 +976,17 @@ export class KlineService {
     for (const day of days) openByDay.set(day.date, day.balanceOpen)
 
     const markers = new Map<string, CashflowTransactionMarker[]>()
+    /*
+      The same entries keyed by their own DAY.
+
+      `markers` above is partitioned by the bucket the caller asked for, which makes
+      it useless to a chart that re-buckets locally: at week granularity every entry
+      of the week sits under the week's Monday, so zooming into a single Tuesday finds
+      nothing. The renderer's continuous zoom changes bucket size on every wheel
+      notch, so it needs the day key — and shipping it here costs one extra map on a
+      payload that is already bounded by the transaction count.
+    */
+    const dayMarkers: Record<string, CashflowTransactionMarker[]> = {}
 
     /*
       True daily extremes, accumulated in the same pass that positions the markers.
@@ -1006,6 +1058,10 @@ export class KlineService {
       if (bucket) bucket.push(entry)
       else markers.set(key, [entry])
 
+      const day = dayMarkers[row.date]
+      if (day) day.push(entry)
+      else dayMarkers[row.date] = [entry]
+
       if (after !== null) {
         if (after > dayHigh) dayHigh = after
         if (after < dayLow) dayLow = after
@@ -1014,7 +1070,7 @@ export class KlineService {
     }
     closeDay()
 
-    return { transactions: byBucket, markers, dayExtremes }
+    return { transactions: byBucket, markers, dayMarkers, dayExtremes }
   }
 
   /**

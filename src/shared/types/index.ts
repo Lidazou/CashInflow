@@ -654,8 +654,16 @@ export interface BiggestExpense extends TransactionWithRefs {
  * because the interesting question ("is my balance trending down?") is answered
  * badly by both extremes — 3,000 daily candles and 3 yearly ones are equally
  * unreadable.
+ *
+ * `hour`/`minute` are the INTRADAY levels, and they are only reachable when the
+ * ledger actually carries a time for the entries in view. A day-only history
+ * stops at `day`: bucketing dateless entries into hours would put every one of
+ * them at a fabricated 00:00 and draw a chart of an event that never happened.
+ * The main process never SELECTS these — `chooseGranularity` stays calendar-only
+ * — they exist so the renderer's continuous zoom has somewhere to go once the
+ * visible window is narrower than a couple of days.
  */
-export type KlineGranularity = 'day' | 'week' | 'month' | 'quarter' | 'year'
+export type KlineGranularity = 'day' | 'week' | 'month' | 'quarter' | 'year' | 'hour' | 'minute'
 
 /**
  * One candle, before the per-point extras (MA, sources, transactions) are added.
@@ -832,6 +840,20 @@ export interface KlineSeries {
    * from this when the user zooms, so a zoom never needs a second round trip.
    */
   daily: KlineDaily[]
+  /**
+   * Every balance-moving entry of the day, keyed by the DAY it happened on.
+   *
+   * `points[].markers` above is keyed by the bucket the service was asked for, which
+   * makes it unusable for a view that re-buckets locally: at week granularity every
+   * marker of the week sits under the week's Monday, so a chart that zooms into a
+   * single Tuesday finds nothing to draw.
+   *
+   * This is the same marker set keyed at day resolution and shipped unconditionally,
+   * so the renderer can build any window — a day, an hour, a minute — without a
+   * second round trip. Bounded by the number of transactions the user has ever
+   * recorded, not by the span, so an idle decade costs nothing.
+   */
+  dayMarkers: Record<string, CashflowTransactionMarker[]>
   /** Which MA windows were computed, e.g. [5, 10, 20, 60, 250]. */
   maWindows: number[]
   currency: string

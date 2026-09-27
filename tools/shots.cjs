@@ -393,32 +393,46 @@ const STEPS = [
     settle: 2600,
     body: `async () => {
       ${HELPERS}
-      await prepareDashboard({ view: 'kline', currency: 'CNY', theme: 'dark' });
+      /*
+        Priced in MYR, which is the currency the demo ledger is denominated in: in CNY the
+        converted balance is large enough that the interesting days sit off the left edge of the
+        3-day default window, and the shot would be of an empty chart.
+      */
+      await prepareDashboard({ view: 'kline', currency: 'MYR', theme: 'dark' });
 
       /*
         Park the cursor ON a transaction marker rather than anywhere in the column.
 
-        The marker hairline is the feature the shot exists to show, and its hint only
-        appears when the pointer is within a few pixels of it — so the loop sweeps down
-        the column until a hint appears instead of guessing a height.
+        The marker hairline is the feature the shot exists to show, and its card only appears
+        when the pointer is inside the hit radius — so the loop aims at the positions the chart
+        itself reports through its frame, instead of sweeping blindly and hoping.
       */
-      const canvas = document.querySelector('.cfc__canvas');
-      if (canvas) {
-        const rect = canvas.getBoundingClientRect();
-        // A day with several transactions, so the candle carries several markers.
-        const x = rect.left + rect.width * 0.36;
-        for (let f = 0.12; f <= 0.7; f += 0.02) {
-          for (const type of ['pointermove', 'mousemove']) {
-            canvas.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: rect.top + rect.height * f, bubbles: true, pointerId: 1 }));
+      const panel = document.querySelector('.cfc__panel--balance');
+      if (panel) {
+        const rect = panel.getBoundingClientRect();
+        let target = null;
+        for (let i = 0; i < 40 && !target; i += 1) {
+          const frame = window.__cfcFrame;
+          if (frame && frame.markers.length > 0) {
+            /* A marker near the middle of the plot, so the card has room beside it. */
+            const sorted = frame.markers.slice().sort((a, b) => a.x - b.x);
+            target = sorted[Math.floor(sorted.length / 2)];
+          } else {
+            await sleep(200);
           }
-          await sleep(70);
-          if (document.querySelector('.kl__hint')) break;
         }
-        await sleep(600);
+        if (target) {
+          const x = rect.left + target.drawX;
+          const y = rect.top + target.y;
+          panel.dispatchEvent(new PointerEvent('pointermove', {
+            clientX: x, clientY: y, bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 0
+          }));
+        }
+        await sleep(700);
       }
       await scrollTop();
       return 'kline ' + (document.querySelector('.kl__ma-readout')?.innerText.replace(/\\s+/g, ' ') ?? '') +
-        ' | ' + (document.querySelector('.kl__hint')?.innerText.replace(/\\s+/g, ' ').slice(0, 50) ?? 'no hint');
+        ' | card: ' + (document.querySelector('.kl__card')?.innerText.replace(/\\s+/g, ' ').slice(0, 60) ?? 'none');
     }`
   },
   {
@@ -426,23 +440,47 @@ const STEPS = [
     settle: 2200,
     body: `async () => {
       ${HELPERS}
-      // Click a candle to open the Daily Detail panel, then hover below the markers so
-      // the shot shows the panel without a hint card overlapping it.
-      const canvas = document.querySelector('.cfc__canvas');
-      if (!canvas) throw new Error('chart canvas missing');
-      const rect = canvas.getBoundingClientRect();
-      const x = rect.left + rect.width * 0.36;
-      const y = rect.top + rect.height * 0.95;
+      /*
+        Click a CANDLE, not a marker: the Daily Detail panel is what this shot is for, and a
+        marker click opens the transaction drawer instead. The bottom of the balance panel is
+        below every marker on a normal day, so it lands on the candle body.
+      */
+      const panel = document.querySelector('.cfc__panel--balance');
+      if (!panel) throw new Error('balance panel missing');
+      const rect = panel.getBoundingClientRect();
+      const frame = window.__cfcFrame;
+      /*
+        The busiest candle, so the Daily Detail list has rows to show.
+      */
+      const busy = frame
+        ? frame.candles.slice().sort((a, b) => b.bucket.transactionCount - a.bucket.transactionCount)[0]
+        : null;
+      const x = busy ? rect.left + busy.x : rect.left + rect.width * 0.7;
+      const y = rect.top + rect.height * 0.97;
 
-      for (const type of ['pointermove', 'mousemove']) {
-        canvas.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, pointerId: 1 }));
-      }
-      await sleep(300);
-      for (const type of ['pointerdown', 'pointerup']) {
-        canvas.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, pointerId: 1, button: 0, buttons: type === 'pointerdown' ? 1 : 0 }));
-      }
+      panel.dispatchEvent(new PointerEvent('pointermove', {
+        clientX: x, clientY: y, bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 0
+      }));
+      await sleep(350);
+      panel.dispatchEvent(new PointerEvent('pointerdown', {
+        clientX: x, clientY: y, bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1
+      }));
+      panel.dispatchEvent(new PointerEvent('pointerup', {
+        clientX: x, clientY: y, bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 0
+      }));
       await sleep(1200);
-      await scrollTop();
+      /* Move the pointer away so the hover card does not cover the panel. */
+      panel.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true, pointerId: 1, pointerType: 'mouse' }));
+      await sleep(300);
+      /*
+        Bring the panel into view rather than scrolling to the top.
+
+        The Daily Detail sits BELOW the chart, so a shot taken from the top of the page cuts off
+        the very thing this step exists to show. It is scrolled to instead.
+      */
+      const detail = document.querySelector('.kl__detail');
+      if (detail) detail.scrollIntoView({ block: 'center', behavior: 'instant' });
+      await sleep(400);
       return 'daily detail: ' + (document.querySelector('.kl__detail-head')?.innerText.replace(/\\s+/g, ' ') ?? 'not open') +
         ' rows=' + document.querySelectorAll('.kl__detail-row').length;
     }`

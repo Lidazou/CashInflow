@@ -272,6 +272,27 @@ export const T = {
   klineCandleLegend: 'K 线：实体为当日余额涨跌，影线为当日余额最高与最低',
   klineFlowLegend: '柱状：向上为收入，向下为支出',
   klineMaUnavailable: '均线需要更多数据才会出现',
+  /** Panel captions. The two panels are separate plot areas and are labelled as such. */
+  klineBalancePanel: '余额 K 线',
+  klineActivityFlow: '现金活动 · 收入 / 支出',
+  klineActivityCount: '现金活动 · 交易笔数',
+  /** Hover card titles. */
+  klineTooltipCandle: 'K 线',
+  klineTooltipTransaction: '交易',
+  klineTooltipOpen: '开',
+  klineTooltipHigh: '高',
+  klineTooltipLow: '低',
+  klineTooltipClose: '收',
+  klineTooltipNet: '净变动',
+  klineTooltipIncome: '收入',
+  klineTooltipExpense: '支出',
+  klineTooltipCount: '交易',
+  klineTooltipBalanceBefore: '交易前余额',
+  klineTooltipBalanceAfter: '交易后余额',
+  klineTooltipTimeUnknown: '时间未记录',
+  klineZoomHint: '滚轮缩放（以鼠标位置为中心）· 拖动平移 · 双击显示全部',
+  /** Shown when the reader zooms in far enough that the day would need splitting. */
+  klineNoTimeNotice: '这些记录没有交易时间，最细只能看到「日」。',
 
   // Empty and error
   noData: '暂无数据',

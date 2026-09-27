@@ -143,6 +143,37 @@ function insertCrossCurrencyTransfer(
   insertLeg.run(toAccountId, toAmount, date, transferId, timestamp, timestamp)
 }
 
+/**
+ * A transfer between two accounts in the SAME currency, with a time on both legs.
+ *
+ * `createTransfer` would refuse the cross-currency pair this suite also needs, so the rows
+ * are written by hand in both cases — same shape, different amounts.
+ */
+function insertSameCurrencyTransfer(
+  fromAccountId: number,
+  toAccountId: number,
+  amount: number,
+  date: string,
+  time: string
+): void {
+  const timestamp = nowIso()
+  const info = handle.db
+    .prepare(
+      `INSERT INTO transfers (from_account_id, to_account_id, amount, date, time, note, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`
+    )
+    .run(fromAccountId, toAccountId, amount, date, time, timestamp, timestamp)
+
+  const transferId = Number(info.lastInsertRowid)
+  const insertLeg = handle.db.prepare(
+    `INSERT INTO transactions
+       (account_id, type, amount, category_id, date, time, merchant, note, transfer_id, created_at, updated_at)
+     VALUES (?, 'transfer', ?, NULL, ?, ?, NULL, NULL, ?, ?, ?)`
+  )
+  insertLeg.run(fromAccountId, -amount, date, time, transferId, timestamp, timestamp)
+  insertLeg.run(toAccountId, amount, date, time, transferId, timestamp, timestamp)
+}
+
 /** The accounts page's own total, converted the same way the series converts it. */
 function accountsTotalIn(displayCurrency: string, rates: RateTable | null): number {
   const totalMajor = services.accounts.list().reduce((sum, item) => {
@@ -1022,6 +1053,72 @@ describe('daily series (the zoom source)', () => {
     const series = services.kline.series('CNY', 'day')
     expect(series.daily).toHaveLength(1)
     expect(series.daily[0].transactionCount).toBe(200)
+  })
+})
+
+describe('day-keyed markers (the continuous-zoom source)', () => {
+  /*
+    `points[].markers` is partitioned by the bucket the caller asked for, which makes it
+    unusable to a chart that re-buckets locally: at week granularity every entry of the week
+    sits under the week's Monday, so zooming into a single Tuesday finds nothing. `dayMarkers`
+    is the same set keyed by the day each entry happened on, and it is what the renderer's
+    continuous zoom draws from.
+  */
+  it('keys every entry by its own day, whatever the requested bucket', () => {
+    const id = account('招商银行', 'CNY', 0)
+    record(id, 'income', '2026-09-21', 100) // Monday
+    record(id, 'expense', '2026-09-23', 30) // Wednesday, same week
+    record(id, 'expense', '2026-10-02', 20) // next month
+
+    const byWeek = services.kline.series('CNY', 'week')
+    // The week bucket collapses all three Mondays apart into two keys…
+    expect([...byWeek.points.flatMap((point) => point.markers)].length).toBe(3)
+    // …while the day map keeps each entry under the day it happened on.
+    expect(Object.keys(byWeek.dayMarkers).sort()).toEqual(['2026-09-21', '2026-09-23', '2026-10-02'])
+    expect(byWeek.dayMarkers['2026-09-23'][0].transactionId).toBeGreaterThan(0)
+  })
+
+  it('carries the same positions as the day-granularity buckets', () => {
+    const id = account('招商银行', 'CNY', 500000)
+    record(id, 'income', '2026-09-25', 300000, { time: '09:00' })
+    record(id, 'expense', '2026-09-25', 650, { time: '12:14' })
+
+    const byDay = services.kline.series('CNY', 'day')
+    const byMonth = services.kline.series('CNY', 'month')
+
+    const strip = (list: typeof byDay.dayMarkers[string]): unknown =>
+      list.map((marker) => [marker.transactionId, marker.time, marker.balanceBefore, marker.balanceAfter])
+
+    // One definition of where a marker sits: a month view and a day view agree exactly.
+    expect(strip(byMonth.dayMarkers['2026-09-25'])).toEqual(strip(byDay.dayMarkers['2026-09-25']))
+    // And the day's own markers are the ones its candle was built from.
+    expect(strip(byDay.points[0].markers)).toEqual(strip(byDay.dayMarkers['2026-09-25']))
+  })
+
+  it('includes transfers, because a transfer leg moves the balance it touches', () => {
+    const from = account('招商银行', 'CNY', 500000)
+    const to = account('工商银行', 'CNY', 0)
+    // Same currency, with a time recorded, so both legs land on the same day.
+    insertSameCurrencyTransfer(from, to, 100000, '2026-09-25', '10:00')
+
+    const series = services.kline.series('CNY', 'day')
+    const markers = series.dayMarkers['2026-09-25'] ?? []
+    expect(markers).toHaveLength(2)
+    expect(markers.every((marker) => marker.type === 'transfer')).toBe(true)
+    expect(markers.every((marker) => marker.balanceAfter !== null)).toBe(true)
+    // Moving your own money is not earning or spending it…
+    expect(series.daily[0].income).toBe(0)
+    expect(series.daily[0].expense).toBe(0)
+    // …but the total across both accounts is unchanged, and the day still has a marker for
+    // each leg, because each leg really did move the balance of the account it touched.
+    expect(series.daily[0].balanceClose).toBe(series.daily[0].balanceOpen)
+  })
+
+  it('is empty, not absent, for a ledger with nothing in it', () => {
+    account('招商银行', 'CNY', 500000)
+    const series = services.kline.series('CNY', 'day')
+    expect(series.dayMarkers).toEqual({})
+    expect(series.points).toEqual([])
   })
 })
 

@@ -43,9 +43,19 @@ let dbHandle: DatabaseHandle | null = null
 let services: Services | null = null
 let mainWindow: BrowserWindow | null = null
 
-/** Resolved app data directory. Electron guarantees this exists per-app. */
+/**
+ * Resolved app data directory. Electron guarantees this exists per-app.
+ *
+ * `CASHINFLOW_DATA_DIR` overrides it, and it exists because `--user-data-dir` does NOT: that
+ * flag moves Chromium's profile, while `app.getPath('userData')` keeps resolving from the
+ * application name, so a "throwaway profile" run still opens the real ledger. Screenshot and
+ * verification runs need a genuinely separate database, and this is the only lever that
+ * provides one — the same reason the window-size variables below are documented hooks rather
+ * than something a test pokes at through the UI.
+ */
 function dataDir(): string {
-  return app.getPath('userData')
+  const override = process.env.CASHINFLOW_DATA_DIR
+  return override && override.trim() !== '' ? override : app.getPath('userData')
 }
 
 function databasePath(): string {
