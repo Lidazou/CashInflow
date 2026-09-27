@@ -293,10 +293,28 @@ describe('每个月都不一样，而且基本上是月光', () => {
     const ordinary = life.months.filter((month) => month.term === 'semester' && !exceptional.has(month.key))
     expect(ordinary.length).toBeGreaterThanOrEqual(6)
     for (const month of ordinary) {
-      expect(Math.abs(month.netCny), `${month.key} netCny ${month.netCny}`).toBeLessThan(320_000)
+      /*
+        THE ASSERTION THAT MATTERS IS AN UPPER BOUND ON THE BALANCE, not on the monthly
+        change. A 月光 student's account comes back to a float — a few thousand, enough for
+        next month's rent — and the thing that must never happen is the float quietly
+        becoming savings. The first version of the generator sized spending from income and
+        left the balance alone, so the sample drifted from ¥6,400 to ¥14,074 over the year
+        (peaking at ¥25,489) and taught the opposite of what it was for.
+      */
+      expect(month.closingCny, `${month.key} closing ${month.closingCny}`).toBeLessThan(1_300_000)
+      expect(month.closingCny, `${month.key} closing ${month.closingCny}`).toBeGreaterThanOrEqual(0)
       /* And the month's spending is real, not a rounding error. */
       expect(month.expenseCny + month.expenseMyr, month.key).toBeGreaterThan(400_000)
     }
+  })
+
+  it('never turns the float into savings: the year ends where it started, plus a float', () => {
+    const first = life.months[0].closingCny
+    const last = life.months[life.months.length - 1].closingCny
+    const peak = Math.max(...life.months.map((month) => month.closingCny))
+    expect(peak).toBeLessThan(1_600_000)
+    /* No upward drift across the year: the last month is not richer than the first. */
+    expect(last).toBeLessThan(first + 600_000)
   })
 
   it('keeps every account solvent through the whole year', () => {

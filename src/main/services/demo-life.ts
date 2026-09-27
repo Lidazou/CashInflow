@@ -502,6 +502,12 @@ export function generateStudentLife(options: StudentLifeOptions): StudentLife {
   const monthsOut: MonthSummary[] = []
 
   /*
+    Money from home for a big purchase, queued for the month the BILL arrives.
+    Filled while walking a month, drained at the start of the next one.
+  */
+  const pendingSubsidies: Array<{ month: string; label: string; amount: number }> = []
+
+  /*
     THE TWO CURRENCIES, AND WHY THE LEDGER HAS AN "换汇" PAIR
 
     The allowance arrives in CNY; the student lives in MYR. The app refuses a transfer
@@ -562,6 +568,21 @@ export function generateStudentLife(options: StudentLifeOptions): StudentLife {
 
     const note = (account: string, amount: number, sign: number): void => {
       closing[account] = (closing[account] ?? 0) + sign * amount
+    }
+
+    /* Money from home that arrives this month, for a purchase made last month. */
+    for (const subsidy of pendingSubsidies.filter((entry) => entry.month === key)) {
+      earn({
+        accountName: '中国银行储蓄卡',
+        amount: subsidy.amount,
+        categoryName: 'Gift',
+        date: dateKey(year, month, 7),
+        time: '10:15',
+        merchant: subsidy.label,
+        note: '大额支出家里帮了一部分'
+      })
+      note('中国银行储蓄卡', subsidy.amount, 1)
+      otherIncome += subsidy.amount
     }
 
     /* --- the 1st: rent, every month, holidays included ---------------------- */
@@ -657,26 +678,22 @@ export function generateStudentLife(options: StudentLifeOptions): StudentLife {
       const time = `${pad(between(random, 9, 21))}:${pad(between(random, 0, 59))}`
 
       /*
-        A big purchase on the card usually comes with help from home.
+        A big purchase on the card usually comes with help from home — and it comes in the
+        month the BILL is paid, not the month of the purchase.
 
-        Without this the student's own savings pay for a ¥6,200 laptop and the year ends
-        overdrawn, which is not 月光 — it is insolvency, and the accounts page would show a
-        negative balance nobody could explain. Parents covering most of a laptop or a flight
-        home is also what actually happens.
+        The first version dated the subsidy in the purchase month and the repayment in the
+        next one, so the card gained the subsidy and lost nothing for a month: four
+        subsidies of ~¥2,000 each turned into a permanent addition to the balance. Parents
+        sending the money just before the bill is also what actually happens.
       */
       if (event.kind === 'large' && event.account === '招商银行信用卡') {
         const subsidy = Math.round((event.amount * 0.7) / 100) * 100
-        earn({
-          accountName: '中国银行储蓄卡',
-          amount: subsidy,
-          categoryName: 'Gift',
-          date: addDays(date, -2),
-          time: '10:15',
-          merchant: `爸妈补贴${event.label.slice(0, 2)}`,
-          note: '大额支出家里帮了一部分'
+        const next = month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 }
+        pendingSubsidies.push({
+          month: `${next.year}-${pad(next.month)}`,
+          label: `爸妈补贴${event.label.slice(0, 2)}`,
+          amount: subsidy
         })
-        note('中国银行储蓄卡', subsidy, 1)
-        otherIncome += subsidy
       }
 
       if (event.kind === 'loanRepaid' || event.kind === 'refund') {
@@ -828,10 +845,33 @@ export function generateStudentLife(options: StudentLifeOptions): StudentLife {
       rather than by a round number that would leave a growing float behind.
     */
     const subscriptionTotal = 14_500 + 7_500 + 3_000 + (month === 1 ? 14_800 + 8_800 : 0)
-    const cushion = semester ? between(random, 20_000, 260_000) : between(random, 10_000, 90_000)
+    /*
+      ---- SIZED AGAINST A TARGET END-OF-MONTH BALANCE, NOT AGAINST THE INCOME ----
+
+      The first version of this step sized the home spending from the month's INCOME and
+      left whatever was already in the account alone. That reads as prudent and is wrong
+      for this character: a month with a subsidy from home, or a cheap month, simply kept
+      the difference, so the balance climbed from ¥6,400 to ¥14,074 over the year — peaking
+      at ¥25,489 — and the sample taught the opposite of 月光.
+
+      What a student who spends the month out actually looks like is a FLOAT: the balance
+      comes back to a few hundred to a few thousand every month, and a month that cannot
+      reach the float spends nothing extra and recovers later. So the target is an ENDING
+      BALANCE, and `spendable` is whatever stands above it.
+    */
+    const floatTarget = semester ? between(random, 300_000, 900_000) : between(random, 250_000, 700_000)
     const walletBalance = closing['支付宝'] ?? 0
-    const available = Math.max(0, allowance + otherIncome - cashOutMonth - cushion)
-    const homeTarget = Math.max(0, available - subscriptionTotal)
+    const closingBeforeHome = closing['中国银行储蓄卡'] ?? 0
+    /*
+      The floor is rent plus a month's exchange, not just the float: a HOLIDAY month has no
+      allowance at all, and a student who had spent down to ¥300 in July would miss August's
+      rent. With the floor in place the balance hovers around half a month's costs — what a
+      student who spends the month out actually has in the account — instead of climbing to
+      five figures or dropping below zero.
+    */
+    const reserve = Math.max(floatTarget, RENT_AMOUNT + 220_000)
+    const spendable = Math.max(0, closingBeforeHome - reserve)
+    const homeTarget = Math.max(0, spendable - subscriptionTotal)
     /*
       A month that cannot cover its own fixed costs — the ones carrying last month's laptop
       on the credit card — tops the wallet up by exactly what the subscriptions need and no
@@ -840,10 +880,10 @@ export function generateStudentLife(options: StudentLifeOptions): StudentLife {
       does not have and drives the wallet negative.
     */
     const walletTopUp =
-      available > 0
+      spendable > 0
         ? Math.max(
             30_000,
-            Math.min(homeTarget + subscriptionTotal - walletBalance, Math.max(30_000, available))
+            Math.min(homeTarget + subscriptionTotal - walletBalance, Math.max(30_000, spendable))
           )
         : Math.max(0, subscriptionTotal - walletBalance)
 
