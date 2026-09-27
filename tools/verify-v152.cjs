@@ -174,11 +174,31 @@ async function main() {
   })()`)
   report('the dialog offers a "+ 再记一笔" button', hasBatch.hasPlus === true, hasBatch.buttons.join(' | '))
 
-  /* Pick an account, then file three rows. */
+  /* Pick an account, then file three rows.
+     The fixture is created through the app's own API so this script runs against an empty profile
+     as well as the seeded one — but an account that is already there WINS, because the README's
+     screenshots are generated from the seeded Maybank profile and a fresh CNY account would
+     quietly turn every one of them into a different example. */
   const account = await evaluate(`(async () => {
-    const accounts = await window.api.accountsList();
-    const list = Array.isArray(accounts) ? accounts : (accounts && accounts.data) || [];
-    return list.length > 0 ? { id: list[0].id, name: list[0].name, currency: list[0].currency } : null;
+    const unwrap = (value) => (Array.isArray(value) ? value : (value && value.data) || []);
+    let accounts = unwrap(await window.api.accountsList());
+    const ensure = async (name, currency) => {
+      const found = accounts.find((item) => item.name === name);
+      if (found) return found;
+      await window.api.accountsCreate({ name, type: 'bank', currency, openingBalance: 0 });
+      accounts = unwrap(await window.api.accountsList());
+      return accounts.find((item) => item.name === name) ?? null;
+    };
+    if (accounts.length === 0) {
+      await ensure('留学', 'CNY');
+      await ensure('Maybank', 'MYR');
+    }
+    const categories = unwrap(await window.api.categoriesList());
+    for (const [name, type] of [['餐饮', 'expense'], ['交通', 'expense']]) {
+      if (!categories.some((item) => item.name === name)) await window.api.categoriesCreate({ name, type });
+    }
+    const chosen = accounts[0];
+    return chosen ? { id: chosen.id, name: chosen.name, currency: chosen.currency } : null;
   })()`)
   report('there is an account to file against', account !== null, account ? account.name + ' ' + account.currency : 'none')
 
@@ -216,11 +236,16 @@ async function main() {
     report('the pending rows show a running total', pending.total !== null && pending.total.length > 0, pending.total ?? 'none')
     await shot('v152-batch')
 
-    /* Removing one must not disturb the others. */
+    /* Removing one must not disturb the others. Targeted by its accessible name, like the edit
+       button below: v1.5.3 made the row itself a button, so "the first button in the row" is the
+       open control now, and clicking it expanded the row instead of removing it. */
     const removed = await evaluate(`(() => {
-      const buttons = Array.from(document.querySelectorAll('.tx-batch__row button'));
-      if (buttons.length === 0) return 'no remove button';
-      buttons[0].click();
+      const row = document.querySelector('.tx-batch__row');
+      if (!row) return 'no row';
+      const button = Array.from(row.querySelectorAll('button'))
+        .find((b) => /移除/.test(b.getAttribute('aria-label') || ''));
+      if (!button) return 'no remove button';
+      button.click();
       return 'clicked';
     })()`)
     await sleep(300)

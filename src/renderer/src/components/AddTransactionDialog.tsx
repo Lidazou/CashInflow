@@ -9,7 +9,7 @@ import { OcrDialog } from '@renderer/components/OcrDialog'
 import type { OcrDraft } from '@renderer/components/OcrDialog'
 import { formatMoney, getCurrency, parseAmountToMinor } from '@shared/lib/money'
 import { addDays, today } from '@shared/lib/dates'
-import { T, categoryLabel, dateHeadingZh, transactionTypeLabel } from '@shared/lib/i18n'
+import { T, categoryLabel, dateHeadingZh, fillTemplate, transactionTypeLabel } from '@shared/lib/i18n'
 import type { AccountWithBalance, Category, TransactionWithRefs } from '@shared/types'
 
 /**
@@ -34,6 +34,17 @@ import type { AccountWithBalance, Category, TransactionWithRefs } from '@shared/
  * What is deliberately PER-ROW: amount, merchant, note, category. Those are the things that
  * actually differ between two receipts from the same evening, and they are all reachable from
  * the keyboard alone.
+ *
+ * QUICK EDIT (v1.5.3)
+ * -------------------
+ * Every pending row is a button, and clicking it opens that row's own editor in place. This is
+ * the only way to fix a single row: before it, a wrong amount could be corrected nowhere except
+ * by removing the row and typing the whole thing again, and a recognised receipt — the row most
+ * likely to be wrong, because a machine read it — could not be corrected at all.
+ *
+ * Editing happens on a WORKING COPY and is applied by 完成, so abandoning it leaves the list
+ * untouched, and the row's own currency, date and time travel with the row instead of being
+ * re-read from the form above.
  *
  * MONEY HANDLING: the amount field is a TEXT input converted with
  * `parseAmountToMinor`, which does string arithmetic. `parseFloat('18.50') * 100`
@@ -83,6 +94,32 @@ interface DraftRow {
   time: string | null
   merchant: string | null
   note: string | null
+  /**
+   * Where the row came from.
+   *
+   * A recognised receipt is the row most likely to need a second look — the reader supplies the
+   * amount and the shop name, and it does not always get them right — so the list marks which
+   * rows arrived that way instead of asking the user to remember.
+   */
+  source: 'manual' | 'ocr'
+}
+
+/**
+ * The working copy behind one row's quick editor (v1.5.3).
+ *
+ * Text, not numbers, for the amount: a half-typed "12." is a legitimate state of the input and
+ * must not be coerced to a number while the user is still typing it. It is parsed once, on 完成,
+ * exactly like the main form.
+ */
+interface DraftEdit {
+  kind: 'income' | 'expense'
+  amountText: string
+  accountId: number
+  categoryId: number | null
+  date: string
+  time: string
+  merchant: string
+  note: string
 }
 
 /** Quick-date buttons, because most entries are for today or yesterday. */
@@ -127,6 +164,10 @@ export function AddTransactionDialog(): React.JSX.Element | null {
   const [formError, setFormError] = useState<string | null>(null)
   /** Lines filed but not yet saved. Empty means the dialog is in plain single-entry mode. */
   const [drafts, setDrafts] = useState<DraftRow[]>([])
+  /** Which pending row is expanded into its quick editor (v1.5.3); null means none. */
+  const [editingKey, setEditingKey] = useState<number | null>(null)
+  const [draftEdit, setDraftEdit] = useState<DraftEdit | null>(null)
+  const [draftEditError, setDraftEditError] = useState<string | null>(null)
   const [ocrOpen, setOcrOpen] = useState(false)
   const draftKeyRef = useRef(0)
 
@@ -147,6 +188,9 @@ export function AddTransactionDialog(): React.JSX.Element | null {
     // The pending list belongs to one sitting. Reopening the dialog starts a fresh one rather
     // than silently resuming somebody's half-finished batch from an hour ago.
     setDrafts([])
+    setEditingKey(null)
+    setDraftEdit(null)
+    setDraftEditError(null)
     setOcrOpen(false)
 
     if (dialog.kind === 'create') {
@@ -184,12 +228,20 @@ export function AddTransactionDialog(): React.JSX.Element | null {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         event.preventDefault()
+        // Escape backs out one level at a time: an open quick editor closes first, and only a
+        // second Escape throws away the whole dialog and everything in the pending list.
+        if (editingKey !== null) {
+          setEditingKey(null)
+          setDraftEdit(null)
+          setDraftEditError(null)
+          return
+        }
         close()
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [open, close])
+  }, [open, close, editingKey])
 
   const account = useMemo(() => accounts?.find((item) => item.id === form.accountId) ?? null, [accounts, form.accountId])
 
@@ -297,7 +349,8 @@ export function AddTransactionDialog(): React.JSX.Element | null {
         date: form.date,
         time: form.time || null,
         merchant: form.merchant.trim() || null,
-        note: form.note.trim() || null
+        note: form.note.trim() || null,
+        source: 'manual'
       }
     ])
 
@@ -346,7 +399,8 @@ export function AddTransactionDialog(): React.JSX.Element | null {
           date: row.date ?? form.date,
           time: row.time,
           merchant: row.merchant,
-          note: null
+          note: null,
+          source: 'ocr'
         })
       }
       return next
@@ -395,6 +449,9 @@ export function AddTransactionDialog(): React.JSX.Element | null {
         const reason = error instanceof Error ? error.message : T.txdErrSaveFailed
         if (done > 0) refreshData()
         setDrafts((previous) => previous.slice(done))
+        // The rows that were written are gone from the list, so an editor open on one of them
+        // has nothing left to edit.
+        closeDraftEditor()
         setFormError(T.txdBatchPartial.replace('{done}', String(done)).replace('{failed}', String(done + 1)).replace('{reason}', reason))
         pushToast({ tone: 'error', message: reason, detail: T.txdBatchPartial.replace('{done}', String(done)).replace('{failed}', String(done + 1)).replace('{reason}', reason) })
         return
@@ -404,6 +461,106 @@ export function AddTransactionDialog(): React.JSX.Element | null {
     pushToast({ tone: 'success', message: T.txdBatchSaved.replace('{n}', String(done)) })
     refreshData()
     close()
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* quick edit of one pending row (v1.5.3)                             */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Expand one pending row into its editor, or collapse it if it is already open.
+   *
+   * The amount is rebuilt from the stored integer for the same reason the edit dialog does it:
+   * showing a float-derived "18.499999" for a stored 1850 is how a user learns to distrust the
+   * numbers. The row's currency, not the form's, decides the scale.
+   */
+  function openDraftEditor(row: DraftRow): void {
+    if (editingKey === row.key) {
+      closeDraftEditor()
+      return
+    }
+    setEditingKey(row.key)
+    setDraftEditError(null)
+    setDraftEdit({
+      kind: row.kind,
+      amountText: formatAmountForInput(row.amountMinor, row.currency),
+      accountId: row.accountId,
+      categoryId: row.categoryId,
+      date: row.date,
+      time: row.time ?? '',
+      merchant: row.merchant ?? '',
+      note: row.note ?? ''
+    })
+  }
+
+  function closeDraftEditor(): void {
+    setEditingKey(null)
+    setDraftEdit(null)
+    setDraftEditError(null)
+  }
+
+  /** Patch the working copy. Any keystroke clears the previous error, like the main form. */
+  function patchDraftEdit(patch: Partial<DraftEdit>): void {
+    setDraftEdit((previous) => (previous === null ? previous : { ...previous, ...patch }))
+    setDraftEditError(null)
+  }
+
+  /**
+   * Apply the working copy back onto its row.
+   *
+   * Validation is the same set the main form applies, for the same reason: a row that reaches the
+   * ledger with a zero amount or a category of the wrong type would be rejected by the main
+   * process anyway, and finding that out at 全部保存 — after nine good rows have been written —
+   * is much worse than finding it out here.
+   */
+  function commitDraftEdit(): void {
+    if (editingKey === null || draftEdit === null) return
+    const row = drafts.find((entry) => entry.key === editingKey)
+    if (!row) {
+      closeDraftEditor()
+      return
+    }
+
+    const minor = parseAmountToMinor(draftEdit.amountText, row.currency)
+    if (draftEdit.amountText.trim() === '') return setDraftEditError(T.txdErrAmountRequired)
+    if (minor === null) return setDraftEditError(T.txdErrAmountInvalid)
+    if (minor <= 0) return setDraftEditError(T.txdErrAmountPositive)
+    if (!draftEdit.date) return setDraftEditError(T.txdErrDateRequired)
+
+    const account = (accounts ?? []).find((item) => item.id === draftEdit.accountId) ?? null
+    if (account === null) return setDraftEditError(T.txdErrAccountRequired)
+
+    const category = (categories ?? []).find((item) => item.id === draftEdit.categoryId) ?? null
+
+    setDrafts((previous) =>
+      previous.map((entry) =>
+        entry.key === editingKey
+          ? {
+              ...entry,
+              kind: draftEdit.kind,
+              amountMinor: minor,
+              // The account decides the currency the ledger will store, so the row follows it
+              // rather than keeping a symbol that no longer describes what will be saved.
+              accountId: account.id,
+              accountName: account.name,
+              currency: account.currency,
+              categoryId: category ? category.id : null,
+              categoryName: category ? category.name : null,
+              date: draftEdit.date,
+              time: draftEdit.time || null,
+              merchant: draftEdit.merchant.trim() || null,
+              note: draftEdit.note.trim() || null
+            }
+          : entry
+      )
+    )
+    closeDraftEditor()
+  }
+
+  /** Remove a row, keeping the editor from pointing at a row that no longer exists. */
+  function removeDraft(key: number): void {
+    setDrafts((previous) => previous.filter((entry) => entry.key !== key))
+    if (editingKey === key) closeDraftEditor()
   }
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
@@ -521,14 +678,19 @@ export function AddTransactionDialog(): React.JSX.Element | null {
             ) : (
               <>
                 <div className="tx-batch__head">
-                  <span className="tx-batch__label">{T.txdBatchPending}</span>
-                  <span className="muted tx-batch__hint">{T.txdBatchSharedNote}</span>
+                  <span className="tx-batch__label" title={T.txdBatchSharedNote}>
+                    {T.txdBatchPending}
+                  </span>
+                  <span className="muted tx-batch__hint">{T.txdBatchEditHint}</span>
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
                     onClick={() => {
                       if (window.confirm(T.txdBatchClearConfirm.replace('{n}', String(drafts.length)))) {
                         setDrafts([])
+                        // Otherwise the editor would still be "open" on a row that no longer
+                        // exists, and the next Escape would close nothing instead of the dialog.
+                        closeDraftEditor()
                       }
                     }}
                   >
@@ -536,32 +698,264 @@ export function AddTransactionDialog(): React.JSX.Element | null {
                   </button>
                 </div>
                 <ul className="tx-batch__list">
-                  {drafts.map((row) => (
-                    <li key={row.key} className="tx-batch__row">
-                      <span className="tx-batch__time num">{row.time ?? <span className="muted">—</span>}</span>
-                      <span className="tx-batch__body">
-                        <span className="truncate tx-batch__title">
-                          {row.merchant ?? (row.categoryName ? categoryLabel(row.categoryName) : T.klineUnnamed)}
-                        </span>
-                        <span className="muted truncate tx-batch__meta">
-                          {[categoryLabel(row.categoryName), row.accountName, row.date].filter(Boolean).join(' · ')}
-                        </span>
-                      </span>
-                      <span className={`tx-batch__amount num ${row.kind === 'income' ? 'is-up' : 'is-down'}`}>
-                        {row.kind === 'income' ? '+' : '−'}
-                        {formatMoney(row.amountMinor, row.currency)}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-icon btn-sm"
-                        aria-label={T.txdBatchRemove}
-                        title={T.txdBatchRemove}
-                        onClick={() => setDrafts((previous) => previous.filter((entry) => entry.key !== row.key))}
-                      >
-                        <Icon name="close" size={14} />
-                      </button>
-                    </li>
-                  ))}
+                  {drafts.map((row) => {
+                    const expanded = editingKey === row.key && draftEdit !== null
+                    /*
+                      The currency the ledger will actually store, which is the ACCOUNT's, not the
+                      row's. They differ when a receipt was read in a currency the chosen account
+                      is not in, and that difference has to be visible: the amount is written as
+                      it was read, with no exchange rate invented on the user's behalf.
+                    */
+                    const storedCurrency =
+                      (accounts ?? []).find((item) => item.id === row.accountId)?.currency ?? row.currency
+                    const fxMismatch = storedCurrency.toUpperCase() !== row.currency.toUpperCase()
+
+                    const editAccount = expanded
+                      ? ((accounts ?? []).find((item) => item.id === draftEdit.accountId) ?? null)
+                      : null
+                    const editCurrency = editAccount?.currency ?? storedCurrency
+                    const editFxMismatch =
+                      expanded && editCurrency.toUpperCase() !== row.currency.toUpperCase()
+                    const editCategories = expanded
+                      ? (categories ?? []).filter((category) => category.type === draftEdit.kind)
+                      : []
+
+                    return (
+                      <li key={row.key} className={`tx-batch__row ${expanded ? 'is-expanded' : ''}`}>
+                        <div className="tx-batch__rowmain">
+                          <button
+                            type="button"
+                            className="tx-batch__open"
+                            aria-expanded={expanded}
+                            aria-label={`${T.txdBatchEditOpen}：${row.merchant ?? row.categoryName ?? T.klineUnnamed}`}
+                            title={T.txdBatchEditHint}
+                            onClick={() => openDraftEditor(row)}
+                          >
+                            <span className="tx-batch__caret" aria-hidden="true">
+                              <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={13} />
+                            </span>
+                            <span className="tx-batch__time num">
+                              {row.time ?? <span className="muted">—</span>}
+                            </span>
+                            <span className="tx-batch__body">
+                              <span className="truncate tx-batch__title">
+                                {row.merchant ?? (row.categoryName ? categoryLabel(row.categoryName) : T.klineUnnamed)}
+                                {row.source === 'ocr' ? (
+                                  <span className="tx-batch__source" title={T.txdBatchSourceOcr}>
+                                    <Icon name="receipt" size={11} />
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="muted truncate tx-batch__meta">
+                                {[categoryLabel(row.categoryName), row.accountName, row.date].filter(Boolean).join(' · ')}
+                              </span>
+                            </span>
+                            <span className={`tx-batch__amount num ${row.kind === 'income' ? 'is-up' : 'is-down'}`}>
+                              {row.kind === 'income' ? '+' : '−'}
+                              {formatMoney(row.amountMinor, row.currency)}
+                              {fxMismatch ? (
+                                <span
+                                  className="tx-batch__fx"
+                                  title={fillTemplate(T.txdBatchFxHint, { from: row.currency, to: storedCurrency })}
+                                >
+                                  {fillTemplate(T.txdBatchFxChip, { to: storedCurrency })}
+                                </span>
+                              ) : null}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-icon btn-sm"
+                            aria-label={T.txdBatchRemove}
+                            title={T.txdBatchRemove}
+                            onClick={() => removeDraft(row.key)}
+                          >
+                            <Icon name="close" size={14} />
+                          </button>
+                        </div>
+
+                        {/* -------- the quick editor for this row (v1.5.3) -------- */}
+                        {expanded ? (
+                          <div
+                            className="tx-batch__editor"
+                            onKeyDown={(event) => {
+                              // Enter applies and closes, so a row can be fixed without ever
+                              // reaching for the mouse. Textareas keep their newlines.
+                              if (event.key === 'Enter' && !(event.target instanceof HTMLTextAreaElement)) {
+                                event.preventDefault()
+                                commitDraftEdit()
+                              }
+                            }}
+                          >
+                            <div className="tx-batch__editkinds" role="group" aria-label={T.txdKindLabel}>
+                              {(['expense', 'income'] as const).map((kind) => (
+                                <button
+                                  key={kind}
+                                  type="button"
+                                  aria-pressed={draftEdit.kind === kind}
+                                  className={`tx-kind ${draftEdit.kind === kind ? 'is-active' : ''}`}
+                                  onClick={() =>
+                                    patchDraftEdit({
+                                      kind,
+                                      // A category belongs to one kind, and the main process
+                                      // rejects the mismatch outright.
+                                      categoryId:
+                                        (categories ?? []).find((item) => item.id === draftEdit.categoryId)?.type === kind
+                                          ? draftEdit.categoryId
+                                          : null
+                                    })
+                                  }
+                                >
+                                  {transactionTypeLabel(kind)}
+                                </button>
+                              ))}
+                            </div>
+
+                            <div className="tx-batch__editgrid">
+                              <div className="field">
+                                <label className="field-label" htmlFor={`tx-edit-amount-${row.key}`}>
+                                  {T.amount}{' '}
+                                  <span className="muted">
+                                    （{getCurrency(editCurrency).symbol} {editCurrency}）
+                                  </span>
+                                </label>
+                                <input
+                                  id={`tx-edit-amount-${row.key}`}
+                                  className="input num tx-batch__editamount"
+                                  inputMode="decimal"
+                                  autoComplete="off"
+                                  value={draftEdit.amountText}
+                                  onChange={(event) => patchDraftEdit({ amountText: event.target.value })}
+                                />
+                              </div>
+
+                              <div className="field">
+                                <label className="field-label" htmlFor={`tx-edit-merchant-${row.key}`}>
+                                  {T.txdMerchant}
+                                </label>
+                                <input
+                                  id={`tx-edit-merchant-${row.key}`}
+                                  className="input"
+                                  maxLength={120}
+                                  placeholder={T.txdMerchantPlaceholder}
+                                  value={draftEdit.merchant}
+                                  onChange={(event) => patchDraftEdit({ merchant: event.target.value })}
+                                />
+                              </div>
+
+                              <div className="field">
+                                <label className="field-label" htmlFor={`tx-edit-category-${row.key}`}>
+                                  {T.txdCategory}
+                                </label>
+                                <select
+                                  id={`tx-edit-category-${row.key}`}
+                                  className="select"
+                                  value={draftEdit.categoryId ?? ''}
+                                  onChange={(event) =>
+                                    patchDraftEdit({ categoryId: event.target.value ? Number(event.target.value) : null })
+                                  }
+                                >
+                                  <option value="">{categoryLabel(null)}</option>
+                                  {editCategories.map((category) => (
+                                    <option key={category.id} value={category.id}>
+                                      {categoryLabel(category.name)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="field">
+                                <label className="field-label" htmlFor={`tx-edit-account-${row.key}`}>
+                                  {T.txdAccount}
+                                </label>
+                                <select
+                                  id={`tx-edit-account-${row.key}`}
+                                  className="select"
+                                  value={draftEdit.accountId}
+                                  onChange={(event) => patchDraftEdit({ accountId: Number(event.target.value) })}
+                                >
+                                  {(accounts ?? []).map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                      {item.name} · {item.currency}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="field">
+                                <label className="field-label" htmlFor={`tx-edit-date-${row.key}`}>
+                                  {T.txdDate}
+                                </label>
+                                <input
+                                  id={`tx-edit-date-${row.key}`}
+                                  type="date"
+                                  className="input"
+                                  value={draftEdit.date}
+                                  onChange={(event) => patchDraftEdit({ date: event.target.value })}
+                                />
+                              </div>
+
+                              <div className="field">
+                                <label className="field-label" htmlFor={`tx-edit-time-${row.key}`}>
+                                  {T.txdTime} <span className="muted">{T.txdOptional}</span>
+                                </label>
+                                <input
+                                  id={`tx-edit-time-${row.key}`}
+                                  type="time"
+                                  className="input"
+                                  value={draftEdit.time}
+                                  onChange={(event) => patchDraftEdit({ time: event.target.value })}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="field">
+                              <label className="field-label" htmlFor={`tx-edit-note-${row.key}`}>
+                                {T.txdNote} <span className="muted">{T.txdOptional}</span>
+                              </label>
+                              <input
+                                id={`tx-edit-note-${row.key}`}
+                                className="input"
+                                maxLength={500}
+                                placeholder={T.txdNotePlaceholder}
+                                value={draftEdit.note}
+                                onChange={(event) => patchDraftEdit({ note: event.target.value })}
+                              />
+                            </div>
+
+                            {editFxMismatch ? (
+                              <p className="tx-batch__warn">
+                                <Icon name="alert" size={14} />
+                                <span>
+                                  {fillTemplate(T.txdBatchFxWarn, {
+                                    from: row.currency,
+                                    fromAmount: formatMoney(row.amountMinor, row.currency),
+                                    to: editCurrency
+                                  })}
+                                </span>
+                              </p>
+                            ) : null}
+
+                            {draftEditError ? (
+                              <p className="field-error" role="alert">
+                                {draftEditError}
+                              </p>
+                            ) : null}
+
+                            <div className="tx-batch__editactions">
+                              <button type="button" className="btn btn-ghost btn-sm" onClick={closeDraftEditor}>
+                                {T.cancel}
+                              </button>
+                              <button type="button" className="btn btn-primary btn-sm" onClick={commitDraftEdit}>
+                                <Icon name="check" size={14} />
+                                {T.txdBatchEditDone}
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </li>
+                    )
+                  })}
                 </ul>
                 <div className="tx-batch__total">
                   <span className="muted">{T.txdBatchSum}</span>
@@ -951,20 +1345,133 @@ const DIALOG_CSS = `
 .tx-batch__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .tx-batch__row {
   display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+.tx-batch__row.is-expanded {
+  background: var(--bg-surface);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.tx-batch__rowmain {
+  display: flex;
   align-items: center;
   gap: var(--space-2);
   padding: 5px var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
   font-size: var(--text-xs);
 }
+/*
+  The row's own button.
+
+  Styled to look like the row it fills rather than like a button, because the whole row IS the
+  control — but it is a real <button>, so it is focusable, Enter- and Space-activatable, and
+  announced as a button by a screen reader without a role attribute pretending it is one.
+*/
+.tx-batch__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.tx-batch__open:hover { background: var(--bg-inset); }
+.tx-batch__open:hover .tx-batch__title { color: var(--accent-text); }
+.tx-batch__open:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--ring-width) var(--ring);
+}
+.tx-batch__caret { flex: 0 0 auto; display: inline-flex; color: var(--text-tertiary); }
 .tx-batch__time { flex: 0 0 42px; color: var(--text-secondary); font-size: var(--text-2xs); }
 .tx-batch__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.tx-batch__title { color: var(--text-primary); font-weight: var(--weight-medium); }
+.tx-batch__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.tx-batch__source { display: inline-flex; color: var(--accent-text); }
 .tx-batch__meta { font-size: var(--text-2xs); }
-.tx-batch__amount { flex: 0 0 auto; font-weight: var(--weight-semibold); }
+.tx-batch__amount { flex: 0 0 auto; display: inline-flex; align-items: baseline; gap: var(--space-2); font-weight: var(--weight-semibold); }
 .tx-batch__amount.is-up { color: var(--income); }
 .tx-batch__amount.is-down { color: var(--expense); }
+.tx-batch__fx {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--warning);
+  background: var(--warning-subtle);
+  border-radius: var(--radius-full);
+  padding: 1px 7px;
+  cursor: help;
+}
+
+/* ---- the per-row quick editor (v1.5.3) ---- */
+.tx-batch__editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2) var(--space-2);
+  border-top: 1px dashed var(--border-subtle);
+  animation: tx-batch-open var(--duration-fast) var(--ease-out);
+}
+@keyframes tx-batch-open {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tx-batch__editor { animation: none; }
+}
+.tx-batch__editkinds {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-1);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 3px;
+}
+.tx-batch__editkinds .tx-kind { font-size: var(--text-xs); padding: 5px 8px; }
+.tx-batch__editgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+@media (max-width: 560px) {
+  .tx-batch__editgrid { grid-template-columns: 1fr; }
+}
+.tx-batch__editor .field { gap: 4px; }
+.tx-batch__editor .field-label { font-size: var(--text-2xs); }
+.tx-batch__editor .input,
+.tx-batch__editor .select { font-size: var(--text-xs); padding: 5px 8px; }
+.tx-batch__editamount { font-variant-numeric: tabular-nums; font-weight: var(--weight-semibold); }
+.tx-batch__warn {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--warning-subtle);
+  color: var(--warning);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+}
+.tx-batch__warn svg { flex: 0 0 auto; margin-top: 1px; }
+.tx-batch__editactions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+.tx-batch__editactions .btn { display: inline-flex; align-items: center; gap: var(--space-1); }
 .tx-batch__total {
   display: flex;
   align-items: baseline;

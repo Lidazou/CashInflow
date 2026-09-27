@@ -8,7 +8,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white">
   <img alt="Release" src="https://img.shields.io/github/v/release/Lidazou/CashInflow?color=16A34A&label=release">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-370%20passing-16A34A">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-377%20passing-16A34A">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white">
 </p>
@@ -178,6 +178,36 @@ Y 轴刻度、标记密度、十字光标全部由它重新算出来。
 - 点「全部保存（N 笔）」一次性写入；**中途出错会明确告诉你第几笔失败、哪些已经存进去了**，
   而不是含糊地说「保存失败」。
 
+#### 待保存的每一笔都能点开直接改
+
+**列表里的每一行本身就是按钮**，点一下就在原位展开这一笔的编辑区 —— 金额、商家、分类、账户、
+日期、时间、备注，全部是**这一行自己的值**，不会去读上方表单。改完点「完成」（或直接按回车）
+写回列表，点「取消」（或按 Esc）原样不动。
+
+![点开待保存的一行改详情](docs/images/v153-quickedit.png)
+
+- 以前这里只有「删除」：金额填错一位，唯一的办法是删掉重填一整笔；**照片识别进来的行更是完全
+  改不了** —— 而这些恰恰是最需要核对的行，因为是机器读的。
+- 列表里用**回形针图标标出哪几笔来自照片**，一眼能看出哪些需要重点核对。
+- 展开的行有自己的**支出 / 收入**切换；切成收入时，属于支出的分类会被自动清掉，
+  而不是留一个保存时必然被拒绝的分类。
+- 编辑用的是**工作副本**：没点「完成」之前，列表里那一笔始终是原值。
+- 整行是一个真正的 `<button>`（可 Tab 聚焦、回车可开、读屏软件会念出来），
+  不是靠 `onClick` 伪装成按钮的 `<div>`。
+
+#### 账单币种和账户币种不一致时，说清楚而不是悄悄换掉
+
+照片上的 `RM 172.50` 和一个 CNY 账户之间**没有汇率可用**，所以这一行会带着标记进列表：
+
+```
+12:14  MAYBANK  未分类 · 留学 · 2026-09-25   −RM 172.50  按 CNY 记账
+```
+
+点开后编辑区会明确告诉你：这一笔来自 MYR 账单（RM 172.50），所选账户是 CNY 账户，
+**保存时会按 CNY 原样记账，不会自动换算** —— 请改选 MYR 账户，或把金额改成实际扣款的
+CNY 金额。金额框的币种符号始终跟着**账户**走，因为那才是最终入库的币种。
+（v1.5.2 只是把原样记账这件事做了，没有说出口；现在它写在你要点的那一行上。）
+
 #### 从照片识别账单
 
 ![识别账单](docs/images/v152-ocr.png)
@@ -193,7 +223,7 @@ Y 轴刻度、标记密度、十字光标全部由它重新算出来。
 ```
 
 点「填入这张」，它就变成待保存列表里的一行，和其他手工录入的行完全一样 ——
-可以改、可以删、可以继续加，最后一起保存：
+**点开就能改**、可以删、可以继续加，最后一起保存：
 
 ![识别结果进入待保存列表](docs/images/v152-ocr-applied.png)
 
@@ -215,6 +245,8 @@ Y 轴刻度、标记密度、十字光标全部由它重新算出来。
 交易列表每一行**常驻一个编辑按钮**（以前只在鼠标悬停时才出现，结果是没人发现这个功能存在），
 点开就是同一个表单，字段已经填好。总览页「今天」列表里的每一行也加了同样的编辑入口。
 交易详情弹窗里的「编辑」保持不变。
+
+![编辑已有交易](docs/images/v152-edit.png)
 
 #### 生活费周期：为什么最多只能设到 28 日
 
@@ -389,6 +421,12 @@ MYR     -RM 1,585.80    ≈ -¥ 2,614.35       3 个账户
 
 ![深色模式](docs/images/dashboard-dark.png)
 
+新增的「点开待保存的一行改详情」两种主题都验过（下面是同一笔识别账单在两种主题下的编辑态）：
+
+![深色下的行内编辑](docs/images/v153-dark.png)
+
+![浅色下的行内编辑](docs/images/v153-light.png)
+
 ---
 
 ## 优势：数据正确性
@@ -509,8 +547,8 @@ Cash      +500.00    转账腿
 
 | 文件 | 说明 |
 |---|---|
-| `CashInflow-1.5.2-x64-setup.exe` | **安装版**。创建开始菜单与桌面快捷方式，并注册卸载项 |
-| `CashInflow-1.5.2-x64-portable.exe` | **免安装单文件版**。直接双击运行，不写注册表、不建快捷方式 |
+| `CashInflow-1.5.3-x64-setup.exe` | **安装版**。创建开始菜单与桌面快捷方式，并注册卸载项 |
+| `CashInflow-1.5.3-x64-portable.exe` | **免安装单文件版**。直接双击运行，不写注册表、不建快捷方式 |
 | `SHA256SUMS.txt` | 上面两个文件的 SHA-256 校验和 |
 
 两个版本功能完全相同，读写同一个数据库。
@@ -625,7 +663,7 @@ powershell -File tools/make-diagram.ps1
 npm test
 ```
 
-**370 个用例，跑真实 SQLite 文件，不用 mock。**
+**377 个用例，跑真实 SQLite 文件，不用 mock。**
 
 | 测试文件 | 覆盖内容 |
 |---|---|
@@ -638,6 +676,8 @@ npm test
 | `ledger.test.ts` | schema 与迁移、余额、转账、校验、引用完整性、持久化 |
 | `import-parser.test.ts` | RFC 4180、分隔符嗅探、表头定位、日期金额归一化 |
 | `import-e2e.test.ts` | 真实文件全流程、查重、微信/支付宝预设、GBK 编码 |
+| `receipt.test.ts` | 账单 OCR 文本解析：**用真实 tesseract 输出做夹具**，中文词内空格、金额出现两次 |
+| `i18n.test.ts` | 文案模板占位符：**每一处都要被替换**（`{to}` 出现两次时只替换第一个是个真实 bug） |
 | `acceptance.test.ts` | 规格书里的验收标准逐条实现为测试 |
 
 两个值得一提的断言：
@@ -675,6 +715,9 @@ Maybank → Cash RM500 后，两个账户余额之和不变，本期支出不变
 - 分类改名不会改写历史（交易引用的是分类 id）
 - **分类类型和有交易的账户币种都不能改**，因为会重新解释每一笔历史交易
 - 重复检测**只在同一账户内比对**，同一笔消费导入到两个账户不会被识别
+- **账单币种和账户币种不一致时，App 不会替你换算**：照片上的 `RM 172.50` 记进 CNY 账户，
+  存的就是 172.50，只是币种变成 CNY。待保存列表和它的编辑区都会明确标出这件事 ——
+  正确的做法是给这一笔选一个同币种的账户，或自己填实际扣款的金额
 - **自定义区间的「今天」列和总余额不跟着变**：它们回答的是「现在有多少钱」，
   把它塞进周期选择器里只会让人算错。只有圆环、收支、结余、支出排行跟周期走
   （圆环中间的余额那一行也是「现在有多少钱」，它不随区间变化，这正是它有用的原因）
@@ -702,7 +745,8 @@ Maybank → Cash RM500 后，两个账户余额之和不变，本期支出不变
 | 表格 | ExcelJS | MIT 协议，支持流式读取 XLSX |
 | 测试 | Vitest | 快，且跑真实数据库而不是 mock |
 
-**运行时依赖只有两个：`better-sqlite3` 和 `exceljs`。**
+**运行时依赖只有三个：`better-sqlite3`、`exceljs` 和 `tesseract.js`**
+（OCR 引擎，随包携带中英文语言包）。
 
 ### 为什么 K 线图没有用图表库
 
@@ -752,7 +796,12 @@ Chinese students studying abroad.
    the next one without the dialog ever closing. Account, date and type are set once for the
    batch — those are what an evening's receipts have in common — while amount, merchant and
    category stay per-row. One save writes them all, and a half-failed batch says exactly which
-   row failed and what did get written rather than "save failed".
+   row failed and what did get written rather than "save failed". **Every pending row is a
+   button**: click it and that row opens its own editor in place — amount, merchant, category,
+   account, date, time, note — applied by "done" or Enter, abandoned by "cancel" or Escape.
+   Rows that came from a photo are marked as such, because those are the ones worth checking,
+   and a receipt in a currency the chosen account is not in says so on the row instead of being
+   quietly booked at face value.
 
 2. **Receipt photos, read on your own machine.** Drop a screenshot or a photo onto the dialog
    and it comes back as a candidate amount, date, time and shop — with the line each figure was

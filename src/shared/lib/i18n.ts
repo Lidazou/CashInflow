@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Interface text, in Simplified Chinese.
  *
  * WHY A PLAIN MODULE AND NOT AN i18n LIBRARY
@@ -25,6 +25,21 @@
  *   can do.
  *   结算周期 for the settlement cycle, 统计区间 for a custom statistics range.
  */
+
+/**
+ * Fill a message template, replacing EVERY occurrence of each placeholder.
+ *
+ * `String.prototype.replace` with a string pattern stops after the first match, which left a
+ * literal "{to}" in the middle of a sentence that names the target currency twice. Message text
+ * is the one place where a reader cannot tell a bug from a typo, so it is filled properly here
+ * rather than by a chain of `.replace` calls at each call site.
+ */
+export function fillTemplate(template: string, values: Record<string, string | number>): string {
+  return Object.entries(values).reduce(
+    (text, [key, value]) => text.split(`{${key}}`).join(String(value)),
+    template
+  )
+}
 
 /** Category names as seeded in the database, mapped to Chinese. */
 const CATEGORY_NAMES: Record<string, string> = {
@@ -366,6 +381,16 @@ export const T = {
   txdBatchNeedAccount: '请先选择账户，才能加入待保存列表。',
   txdBatchTimeHint: '时间留空则这一笔不记录时刻',
   txdBatchTransferUnsupported: '转账请单独保存，不能加入批量列表。',
+
+  // Quick edit of one pending row (v1.5.3)
+  txdBatchEditHint: '点开任意一笔，可以改金额、商家、分类、日期和时间',
+  txdBatchEditOpen: '编辑这一笔',
+  txdBatchEditDone: '完成',
+  txdBatchSourceOcr: '这一笔来自账单照片识别',
+  txdBatchFxChip: '按 {to} 记账',
+  txdBatchFxHint: '{from} 账单，所选账户是 {to}：保存时按 {to} 原样记账，不会自动换算。',
+  txdBatchFxWarn:
+    '这一笔来自 {from} 账单（{fromAmount}），而所选账户是 {to} 账户。保存时会按 {to} 原样记账，不会自动换算 —— 请改选 {from} 账户，或把金额改成实际扣款的 {to} 金额。',
 
   // Receipt OCR (v1.5.2)
   ocrButton: '识别账单照片',
