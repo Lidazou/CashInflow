@@ -363,10 +363,11 @@ export default function DashboardPage(): JSX.Element {
               One card, two views. In K线 mode it takes both grid columns and the
               two list cards move below it; see `.sw-dash.is-expanded` in the styles
               for why the expansion is a layout change rather than a transform. */}
+          {/* No `is-expanded` class of its own: the card stays in column 1 and the
+              GRID tracks animate, so the card's width is a real interpolatable value
+              for the whole animation. See the note on `.sw-dash.is-expanded`. */}
           <section
-            className={`card sw-dash__col sw-dash__left sw-dash__periodCard ${
-              viewMode === 'kline' ? 'is-expanded' : ''
-            }`}
+            className="card sw-dash__col sw-dash__left sw-dash__periodCard"
             aria-labelledby="sw-dash-period"
           >
             <div className="sw-dash__cardtop">
@@ -1136,20 +1137,46 @@ const DASHBOARD_STYLES = `
 
    The two list cards move down on their own, as the second grid row — no
    animation is needed for them, and adding one would desynchronise them from the
-   card that is actually growing. */
+   card that is actually growing.
+
+   BOTH directions animate, in two separate keyframes, and the card never spans a
+   track.
+
+   That last part is the whole trick and it is not obvious. The card used to claim
+   grid-column 1 / -1, which made it span — and a spanning item's width is simply
+   the sum of the tracks, so animating the tracks changed nothing about it and the
+   expansion SNAPPED while the collapse appeared to animate. Measured, not guessed: the
+   expand produced 2 distinct intermediate widths and the collapse produced 42.
+
+   So the card stays in column 1 in both states and the TRACKS do the moving. Column 1
+   goes from 55.5% to 100%, and the card is width 100% of it, so its width is a real
+   interpolatable value for the whole 360ms.
+
+   The two list cards then sit in the second row and span both columns, which is a
+   static placement and so cannot suffer the same problem. */
 .sw-dash.is-expanded {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 0%;
   animation: dash-expand var(--duration-slow) var(--ease-out) both;
 }
 @keyframes dash-expand {
   from { grid-template-columns: 55.5% 44.5%; }
   to { grid-template-columns: 100% 0%; }
 }
-.sw-dash__periodCard.is-expanded { grid-column: 1 / -1; }
+/* The collapse, declared on the BASE class. Equal specificity means the expanding
+   rule — declared later — takes over while expanding, and removing the class hands
+   control back here. Slightly quicker, because returning to a view you already know
+   should feel like release rather than travel. */
+.sw-dash {
+  animation: dash-collapse 320ms var(--ease-out) both;
+}
+@keyframes dash-collapse {
+  from { grid-template-columns: 100% 0%; }
+  to { grid-template-columns: 55.5% 44.5%; }
+}
 .sw-dash__periodCard { position: relative; }
-/* In K线 mode the two list cards move BELOW the chart and sit side by side.
-   Stacked, they would start below a 560px card and leave the first screen mostly
-   empty; side by side they fill the row the chart just vacated. */
+/* Expanded, the card fills column 1 (which is now the whole grid) and the list cards
+   take the second row across both columns. */
+.sw-dash.is-expanded .sw-dash__periodCard { width: 100%; }
 .sw-dash.is-expanded .sw-dash__stack {
   grid-column: 1 / -1;
   flex-direction: row;
