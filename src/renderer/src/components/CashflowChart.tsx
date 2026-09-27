@@ -610,7 +610,27 @@ export function CashflowChart({
       ctx.fillStyle = color
       ctx.fillRect(x - bodyW / 2, top, bodyW, bodyH)
 
-      if (!showMarkers) continue
+      /*
+        At a coarser candle size the individual entries are not drawn at all.
+
+        A month holds dozens of transactions; drawing them all as hairlines produces a
+        solid block that says nothing. The count is the useful summary at that density,
+        and zooming back in to days restores the individual markers — which is the
+        whole point of the zoom being able to change the candle size.
+      */
+      if (!showMarkers) {
+        if (bucket.transactionCount > 0 && bodyW >= 18 && bodyH >= 16) {
+          ctx.save()
+          ctx.fillStyle = palette.background
+          ctx.font = `10px ${fontFamily}`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          // "6 笔" rather than a bare 6: a lone digit inside a candle reads as a price.
+          ctx.fillText(`${bucket.transactionCount} 笔`, x, top + bodyH / 2)
+          ctx.restore()
+        }
+        continue
+      }
 
       /*
         TRANSACTION MARKERS — the reason this is a cashflow chart.
