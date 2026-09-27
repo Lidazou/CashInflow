@@ -158,7 +158,15 @@ export const ALLOWANCE_AMOUNT = 1_000_000 // ¥10,000.00
 export const ALLOWANCE_DAY = 5
 export const RENT_AMOUNT = 320_000 // ¥3,200.00
 /** Rent is paid on the 1st, to a landlord, from the Chinese card. */
-export const RENT_DAY = 1
+/**
+ * Rent is paid on the 6th — the day after the allowance lands.
+ *
+ * That is what a student on a monthly allowance actually does, and it is also what makes
+ * the month able to end near zero: paying rent on the 1st means carrying a whole month's
+ * rent in the account at all times, so the balance can never come back down to a few
+ * hundred (which is exactly how this sample was reported as unrealistic in v1.7.1).
+ */
+export const RENT_DAY = 6
 export const BIRTHDAY = { month: 3, day: 18 }
 export const SPRING_FESTIVAL = '2026-02-17'
 /** A month with a single expense at or above this is a "special" month. */
@@ -614,9 +622,14 @@ export function generateStudentLife(options: StudentLifeOptions): StudentLife {
       note('中国银行储蓄卡', ALLOWANCE_AMOUNT, 1)
       allowance = ALLOWANCE_AMOUNT
     } else {
-      const count = between(random, 2, 4)
+      /*
+        Holidays: no allowance, and the parents' small transfers have to cover the rent as
+        well as the living. Three or four of them, sized so rent plus a lean month fits —
+        otherwise a holiday with no allowance simply goes into the red.
+      */
+      const count = between(random, 3, 4)
       for (let i = 0; i < count; i += 1) {
-        const amount = between(random, 50_000, 150_000)
+        const amount = between(random, 120_000, 200_000)
         const day = between(random, 3, daysInMonth(year, month))
         earn({
           accountName: '中国银行储蓄卡',
@@ -758,18 +771,18 @@ export function generateStudentLife(options: StudentLifeOptions): StudentLife {
     */
     const localTarget = semester
       ? month === 12 || month === 5 || month === 6
-        ? between(random, 175_000, 215_000) // exam months: campus, cheap
+        ? between(random, 240_000, 290_000) // exam months: campus, cheap
         : monthEvents.some((event) => event.kind === 'trip')
-          ? between(random, 150_000, 185_000) // away, but the trip is its own line
-          : between(random, 225_000, 285_000)
-      : between(random, 150_000, 235_000) // holidays: at home, less transport
+          ? between(random, 220_000, 280_000) // away, but the trip is its own line
+          : between(random, 290_000, 370_000) // an ordinary month in Kuala Lumpur
+      : between(random, 200_000, 270_000) // holidays: fewer Grab rides, still eating
     let localTotal = 0
     const localRows: GeneratedTransaction[] = []
     for (let day = 1; day <= daysInMonth(year, month) && localTotal < localTarget; day += 1) {
       const weekday = new Date(year, month - 1, day).getDay()
       const weekend = weekday === 0 || weekday === 6
-      if (random() < (weekend ? 0.14 : 0.22)) continue
-      const items = weekend ? between(random, 2, 4) : between(random, 1, 3)
+      if (random() < (weekend ? 0.1 : 0.16)) continue
+      const items = weekend ? between(random, 3, 5) : between(random, 2, 4)
       for (let i = 0; i < items && localTotal < localTarget; i += 1) {
         const entry = pickWeighted(random, LOCAL_STREAM)
         const amount = between(random, entry.low, entry.high)
@@ -848,29 +861,25 @@ export function generateStudentLife(options: StudentLifeOptions): StudentLife {
     /*
       ---- SIZED AGAINST A TARGET END-OF-MONTH BALANCE, NOT AGAINST THE INCOME ----
 
-      The first version of this step sized the home spending from the month's INCOME and
-      left whatever was already in the account alone. That reads as prudent and is wrong
-      for this character: a month with a subsidy from home, or a cheap month, simply kept
-      the difference, so the balance climbed from ¥6,400 to ¥14,074 over the year — peaking
-      at ¥25,489 — and the sample taught the opposite of 月光.
+      Two earlier versions got this wrong in opposite directions, and both looked like a
+      different character:
 
-      What a student who spends the month out actually looks like is a FLOAT: the balance
-      comes back to a few hundred to a few thousand every month, and a month that cannot
-      reach the float spends nothing extra and recovers later. So the target is an ENDING
-      BALANCE, and `spendable` is whatever stands above it.
+        v1.7.0  sized the spending from the month's INCOME and left the balance alone, so
+                every surplus (a subsidy from home, a cheap month) stayed put and the
+                account climbed from ¥6,400 to ¥14,074 — a saver, not 月光.
+        v1.7.1  sized it from the BALANCE with a floor of rent plus a month's exchange, so
+                the account could never come below ~¥5,400 — still several thousand at month
+                end, which is not what a student's account looks like on the 28th.
+
+      What it actually looks like: rent goes out right after the allowance arrives, the rest
+      is spent down over the month, and the month ends with a few hundred — or, in a tight
+      month, with a few hundred OWED on the credit card. So the target is an ending balance
+      of under ¥1,000, and there is no floor above that any more.
     */
-    const floatTarget = semester ? between(random, 300_000, 900_000) : between(random, 250_000, 700_000)
+    const floatTarget = semester ? between(random, 0, 60_000) : between(random, 0, 40_000)
     const walletBalance = closing['支付宝'] ?? 0
     const closingBeforeHome = closing['中国银行储蓄卡'] ?? 0
-    /*
-      The floor is rent plus a month's exchange, not just the float: a HOLIDAY month has no
-      allowance at all, and a student who had spent down to ¥300 in July would miss August's
-      rent. With the floor in place the balance hovers around half a month's costs — what a
-      student who spends the month out actually has in the account — instead of climbing to
-      five figures or dropping below zero.
-    */
-    const reserve = Math.max(floatTarget, RENT_AMOUNT + 220_000)
-    const spendable = Math.max(0, closingBeforeHome - reserve)
+    const spendable = Math.max(0, closingBeforeHome - floatTarget)
     const homeTarget = Math.max(0, spendable - subscriptionTotal)
     /*
       A month that cannot cover its own fixed costs — the ones carrying last month's laptop
@@ -879,13 +888,16 @@ export function generateStudentLife(options: StudentLifeOptions): StudentLife {
       buys a MacBook; the alternative, a forced minimum top-up, spends money the account
       does not have and drives the wallet negative.
     */
+    /*
+      Only ever move what the month will actually spend: a top-up larger than the wallet can
+      get through leaves a growing float in the wallet instead of in the bank, which is the
+      same bug wearing a different hat.
+    */
     const walletTopUp =
       spendable > 0
-        ? Math.max(
-            30_000,
-            Math.min(homeTarget + subscriptionTotal - walletBalance, Math.max(30_000, spendable))
-          )
-        : Math.max(0, subscriptionTotal - walletBalance)
+        ? Math.max(0, Math.min(homeTarget + subscriptionTotal - walletBalance + 100, spendable))
+        : /* a month that cannot spare anything still has to pay its subscriptions */
+          Math.max(0, subscriptionTotal - walletBalance + 100)
 
     if (walletTopUp > 0) {
       transfers.push({
@@ -940,8 +952,8 @@ export function generateStudentLife(options: StudentLifeOptions): StudentLife {
     for (let day = 1; day <= daysInMonth(year, month) && homeTotal < homeTarget; day += 1) {
       const weekday = new Date(year, month - 1, day).getDay()
       const weekend = weekday === 0 || weekday === 6
-      if (random() < (weekend ? 0.3 : 0.42)) continue
-      const items = between(random, 1, weekend ? 3 : 2)
+      if (random() < (weekend ? 0.14 : 0.26)) continue
+      const items = between(random, 2, 4)
       for (let i = 0; i < items && homeTotal < homeTarget; i += 1) {
         const entry = pickWeighted(random, HOME_STREAM)
         const amount = Math.min(between(random, entry.low, entry.high), Math.max(100, homeTarget - homeTotal))
@@ -959,6 +971,65 @@ export function generateStudentLife(options: StudentLifeOptions): StudentLife {
       }
     }
     expenseCny += homeTotal
+
+    /*
+      ---- THE TIGHT MONTH: A FEW HUNDRED ON THE CARD (花呗/信用卡) ----
+
+      A student who runs out before the month does puts the rest on credit. Two or three
+      times a year that is a takeaway order and a supermarket run in the last week, on the
+      credit card, which then sits owed until the bill is paid on the 9th of the next month.
+
+      Without this the sample's month always ended at exactly the bank balance, which is
+      tidy and wrong: "月光" includes the month where the last week was on credit. The card
+      account is allowed to be negative for the same reason a real one is — it is a credit
+      line, not a bank account — and the debt stays under a few hundred.
+    */
+    const tight =
+      homeTarget === 0 ||
+      homeTotal >= homeTarget - 1_000 ||
+      (closing['中国银行储蓄卡'] ?? 0) < 80_000
+    if (tight && random() < 0.6) {
+      const orders = between(random, 1, 2)
+      for (let i = 0; i < orders; i += 1) {
+        const amount = between(random, 8_000, 32_000)
+        const day = daysInMonth(year, month) - between(random, 1, 6)
+        spend({
+          accountName: '招商银行信用卡',
+          amount,
+          categoryName: pick(random, ['Food', 'Shopping', 'Food']),
+          date: dateKey(year, month, day),
+          time: `${pad(between(random, 19, 23))}:${pad(between(random, 0, 59))}`,
+          merchant: pick(random, ['美团外卖', '饿了么', '超市采购', '淘宝']),
+          note: '这个月先刷卡'
+        })
+        note('招商银行信用卡', amount, -1)
+      }
+    }
+
+    /*
+      ---- A SHORT MONTH: THE PARENTS TOP IT UP ----
+
+      Holidays have no allowance and the rent does not stop, so a month can genuinely come
+      up short. What happens then — and what this adds — is one more transfer from home,
+      sized to clear the gap and leave a small float. It keeps every account solvent without
+      inventing a salary or a scholarship, and it is why the holiday months end under ¥1,000
+      rather than at minus three thousand.
+    */
+    const closingNow = closing['中国银行储蓄卡'] ?? 0
+    if (closingNow < 0) {
+      const bail = -closingNow + between(random, 20_000, 120_000)
+      earn({
+        accountName: '中国银行储蓄卡',
+        amount: bail,
+        categoryName: 'Gift',
+        date: dateKey(year, month, 26),
+        time: '18:40',
+        merchant: pick(random, ['妈妈又转了', '爸爸转账', '家里转的']),
+        note: '这个月不太够'
+      })
+      note('中国银行储蓄卡', bail, 1)
+      otherIncome += bail
+    }
 
     monthsOut.push({
       key,

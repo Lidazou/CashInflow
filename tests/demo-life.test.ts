@@ -5,6 +5,7 @@ import {
   ALLOWANCE_DAY,
   LARGE_EXPENSE_THRESHOLD,
   RENT_AMOUNT,
+  RENT_DAY,
   defaultDemoWindow,
   generateStudentLife,
   isSemesterMonth,
@@ -128,7 +129,7 @@ describe('生活费：5 号发放，只有学期有', () => {
       )
       expect(rows.length, month.key).toBeGreaterThanOrEqual(2)
       for (const row of rows) {
-        expect(row.amount, row.date).toBeLessThanOrEqual(150_000) // ¥1,500
+        expect(row.amount, row.date).toBeLessThanOrEqual(200_000) // ¥2,000
         expect(row.categoryName).toBe('Gift')
       }
     }
@@ -136,11 +137,11 @@ describe('生活费：5 号发放，只有学期有', () => {
 })
 
 describe('房租：每月固定 3200', () => {
-  it('charges rent on the 1st of every month, holidays included', () => {
+  it('charges rent every month, on the day after the allowance, holidays included', () => {
     for (const month of life.months) {
       const rows = life.transactions.filter((row) => row.date.startsWith(month.key) && row.merchant === '房租')
       expect(rows, month.key).toHaveLength(1)
-      expect(rows[0].date).toBe(`${month.key}-01`)
+      expect(rows[0].date).toBe(`${month.key}-${String(RENT_DAY).padStart(2, '0')}`)
       expect(rows[0].amount).toBe(RENT_AMOUNT)
       expect(rows[0].categoryName).toBe('Housing')
       expect(rows[0].type).toBe('expense')
@@ -150,7 +151,7 @@ describe('房租：每月固定 3200', () => {
   it('has a rent reminder in the recurring rules', () => {
     const rule = life.recurringRules.find((entry) => entry.label === '房租')
     expect(rule?.amount).toBe(RENT_AMOUNT)
-    expect(rule?.dayOfPeriod).toBe(1)
+    expect(rule?.dayOfPeriod).toBe(RENT_DAY)
   })
 })
 
@@ -324,8 +325,36 @@ describe('每个月都不一样，而且基本上是月光', () => {
       expect(month.closingWallet, `${month.key} wallet`).toBeGreaterThanOrEqual(0)
     }
     for (const [name, balance] of Object.entries(life.closing)) {
+      if (name === '招商银行信用卡') continue
       expect(balance, name).toBeGreaterThanOrEqual(0)
     }
+  })
+
+  it('ends the month with a few hundred, not a few thousand', () => {
+    /*
+      The complaint that produced this test: "月光族余额不太可能剩下这么多，基本上每个月剩下一千
+      以内就差不多了". The bank card is the account being measured，and the bar is ¥1,000 — with the
+      card-debt months included, since a month that was put on credit ends with LESS cash.
+    */
+    const closings = life.months.map((month) => month.closingCny)
+    const over = closings.filter((value) => value > 100_000)
+    expect(over.length, `months over ¥1,000: ${over.join(', ')}`).toBeLessThanOrEqual(2)
+    /* And it really does come back down rather than drifting up over the year. */
+    expect(Math.max(...closings)).toBeLessThan(400_000)
+  })
+
+  it('sometimes runs out and puts the last week on the card', () => {
+    const onCredit = life.transactions.filter((row) => row.note === '这个月先刷卡')
+    expect(onCredit.length).toBeGreaterThanOrEqual(2)
+    for (const row of onCredit) expect(row.accountName).toBe('招商银行信用卡')
+    /*
+      The debt is a few hundred, never a balance carried for months: the bill is paid on the
+      9th of the next month. A credit card account may therefore be negative — it is a credit
+      line — but it must stay small.
+    */
+    const owed = life.closing['招商银行信用卡'] ?? 0
+    expect(owed).toBeLessThanOrEqual(0)
+    expect(Math.abs(owed)).toBeLessThan(200_000)
   })
 
   it('does not repeat itself: months differ in size, count and shape', () => {
