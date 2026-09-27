@@ -478,29 +478,45 @@ export function BalanceFlowChart({
   }, [buckets, viewWindow.start, viewWindow.end])
 
   /**
-   * Did the balance move at all inside the visible window?
+   * Is there genuinely nothing to draw in the visible window?
    *
-   * A ledger holding only an opening balance draws one hairline candle in an empty
-   * plot, which looks like a failed render rather than a truthful "nothing has
-   * happened yet". Naming the state is the same treatment the dashboard's donut gets
-   * for an empty period, and for the same reason: on a finance screen, zero and
-   * broken must not look alike.
+   * True only when the balance never varied AND no money moved at all — not merely
+   * when `balanceLow === balanceHigh`.
+   *
+   * That distinction matters for a one-day range, which is the normal state of a
+   * brand-new ledger: `from` and `to` are the same date, so the low and high are
+   * necessarily equal even if the day contained a large salary. An earlier version
+   * tested the balance range alone and therefore printed "the balance did not change"
+   * on the very day ¥12,000 arrived, while the tooltip beside it correctly showed the
+   * income. The caption contradicted the tooltip; this is the fix.
    */
   const isFlat = useMemo(() => {
     const slice = buckets.slice(viewWindow.start, viewWindow.end + 1)
     if (slice.length === 0) return true
+
     let min = Number.POSITIVE_INFINITY
     let max = Number.NEGATIVE_INFINITY
+    let moved = false
     for (const bucket of slice) {
       if (bucket.balanceLow < min) min = bucket.balanceLow
       if (bucket.balanceHigh > max) max = bucket.balanceHigh
+      if (bucket.income !== 0 || bucket.expense !== 0 || bucket.net !== 0) moved = true
     }
+
+    if (moved) return false
     return !Number.isFinite(min) || !Number.isFinite(max) || min === max
   }, [buckets, viewWindow.start, viewWindow.end])
 
   const step = viewWindow.count > 0 ? (layout.plotRight - layout.plotLeft) / viewWindow.count : 0
   // 2px minimum, not 1: at 1px a candle body is indistinguishable from its own
   // wick, and a day whose balance barely moved reads as a day with no data.
+  /*
+    14px cap, not 2px floor only. Without the cap a one-day series — the normal state
+    of a new ledger, where the window holds a single bucket — drew one candle as wide
+    as a third of the plot, which reads as a bar chart rather than a candle. A candle
+    keeps its own width whether there are 1 or 1,000 of them; the divider ticks inside
+    it scale with that width.
+  */
   const candleWidth = Math.max(2, Math.min(14, step * 0.62))
 
   const xFor = useCallback(
