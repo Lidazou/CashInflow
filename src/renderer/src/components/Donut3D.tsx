@@ -190,23 +190,25 @@ function fitFontSize(text: string, maxWidth: number, ideal: number, min: number)
 /**
  * Component-local styles.
  *
- * Two custom properties are declared here because no single token is a *light*
- * sheen in dark mode and a *dark* shadow in light mode:
- *   --donut3d-sheen    outer-edge highlight   → white in light, near-white in dark
- *   --donut3d-shadow   contact shadow         → near-black in both themes
- * Both are built from tokens, and the `.dark` override simply picks the other end
- * of the same scale. Nothing below is a literal colour.
+ * Two custom properties are declared here because no single token is both a light
+ * sheen and a dark shadow:
+ *   --donut3d-sheen    outer-edge highlight
+ *   --donut3d-shadow   contact shadow
+ *
+ * The base values are the DARK-theme pair (a near-white sheen over a dark card),
+ * and `.light` picks the other end of the same scale. Toggling `.light` rather
+ * than `.dark` matches tokens.css, where dark is `:root` and light opts out.
  */
 const DONUT3D_STYLES = `
 .donut3d {
-  --donut3d-sheen: var(--bg-surface);
-  --donut3d-shadow: var(--text-primary);
+  --donut3d-sheen: var(--text-primary);
+  --donut3d-shadow: var(--bg-inset);
   position: relative;
   max-width: 100%;
 }
-.dark .donut3d {
-  --donut3d-sheen: var(--text-primary);
-  --donut3d-shadow: var(--bg-inset);
+.light .donut3d {
+  --donut3d-sheen: var(--bg-surface);
+  --donut3d-shadow: var(--text-primary);
 }
 .donut3d__svg { display: block; max-width: 100%; height: auto; }
 /* The side wall: identical arcs, one darkening step down. */

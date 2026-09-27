@@ -6,6 +6,7 @@ import { Icon, iconNameOr } from '@renderer/components/Icon'
 import type { IconName } from '@renderer/components/Icon'
 import { Donut3D } from '@renderer/components/Donut3D'
 import type { Donut3DSegment } from '@renderer/components/Donut3D'
+import { BalanceFlowChart } from '@renderer/components/BalanceFlowChart'
 import { CurrencyBar } from '@renderer/components/CurrencyBar'
 import { Money, ConversionNote } from '@renderer/components/Money'
 import { useAction, useAsync } from '@renderer/hooks/useData'
@@ -33,7 +34,9 @@ import type {
   BiggestExpense,
   CustomPeriod,
   DashboardPeriodMode,
+  DashboardViewMode,
   IpcDateRange,
+  KlineSeries,
   TransactionWithRefs
 } from '@shared/types'
 
@@ -75,7 +78,8 @@ export default function DashboardPage(): JSX.Element {
   const setActiveMonth = useAppStore((state) => state.setActiveMonth)
   const refreshData = useAppStore((state) => state.refreshData)
   const updateSettings = useAppStore((state) => state.updateSettings)
-  const { dateFormat, displayCurrency, cycleStartDay, dashboardPeriodMode, dashboardRange } = useDisplaySettings()
+  const { dateFormat, displayCurrency, cycleStartDay, dashboardPeriodMode, dashboardRange, dashboardViewMode } =
+    useDisplaySettings()
   const openCreateTransaction = useUiStore((state) => state.openCreateTransaction)
   const showTransactionDetail = useUiStore((state) => state.showTransactionDetail)
   const { run, pending } = useAction()
@@ -91,6 +95,20 @@ export default function DashboardPage(): JSX.Element {
     () => dashboardRange ?? { from: CUSTOM_RANGE_PRESETS[1].build().from, to: today() }
   )
   const [rangeError, setRangeError] = useState<string | null>(null)
+
+  const viewMode = dashboardViewMode
+
+  /**
+   * Switch the period card between the donut and the K-line chart.
+   *
+   * Persisted through the same settings action the rest of the page uses, so the
+   * choice survives a restart and is visible to `useDisplaySettings` immediately
+   * (the expansion animation and the chart both key off it).
+   */
+  const toggleViewMode = async (): Promise<void> => {
+    const next: DashboardViewMode = viewMode === 'donut' ? 'kline' : 'donut'
+    await updateSettings({ dashboardViewMode: next })
+  }
 
   // Saved ranges double as quick picks: they are the windows the user already
   // decided were worth keeping, so they belong next to the date inputs.
@@ -130,6 +148,19 @@ export default function DashboardPage(): JSX.Element {
   const biggestState = useAsync(
     () => window.api.statsBiggestExpenses(activeMonth, 5, requestRange),
     [periodKey, dashboardPeriodMode]
+  )
+
+  /**
+   * The candle series, fetched only when the K-line view is on.
+   *
+   * Gated deliberately: the series ships a daily row for every day the user has
+   * ever recorded, plus up to 200 transactions per bucket, so fetching it while
+   * the donut is on screen would spend that cost on a view nobody is looking at.
+   * `dataVersion` still refreshes it, so a new transaction updates the chart.
+   */
+  const klineState = useAsync<KlineSeries | null>(
+    () => (viewMode === 'kline' ? window.api.statsKline('auto') : Promise.resolve(null)),
+    [viewMode]
   )
 
   const todayDate = summaryState.data?.todayDate ?? today()
@@ -316,40 +347,80 @@ export default function DashboardPage(): JSX.Element {
           </p>
         </section>
       ) : (
-        <div className="sw-dash">
-          {/* ---------------- left: the period ---------------- */}
-          <section className="card sw-dash__col sw-dash__left" aria-labelledby="sw-dash-period">
-            <ModeToggle mode={dashboardPeriodMode} onSelect={(mode) => void switchMode(mode)} />
-
-            <div className="sw-dash__monthbar">
+        <div className={`sw-dash ${viewMode === 'kline' ? 'is-expanded' : ''}`}>
+          {/* ---------------- the period ----------------
+              One card, two views. In K线 mode it takes both grid columns and the
+              two list cards move below it; see `.sw-dash.is-expanded` in the styles
+              for why the expansion is a layout change rather than a transform. */}
+          <section
+            className={`card sw-dash__col sw-dash__left sw-dash__periodCard ${
+              viewMode === 'kline' ? 'is-expanded' : ''
+            }`}
+            aria-labelledby="sw-dash-period"
+          >
+            <div className="sw-dash__cardtop">
+              {viewMode === 'donut' ? (
+                <ModeToggle mode={dashboardPeriodMode} onSelect={(mode) => void switchMode(mode)} />
+              ) : (
+                <div className="sw-dash__klinehead">
+                  <h2 className="card-title">{T.klineTitle}</h2>
+                  <p className="muted sw-dash__subhead">
+                    {T.klineCandleLegend} · {T.klineFlowLegend}
+                  </p>
+                </div>
+              )}
               <button
                 type="button"
-                className="btn btn-ghost btn-icon"
-                onClick={() => shiftPeriod(-1)}
-                aria-label="上一个周期"
-                title="上一个周期"
+                className="sw-dash__viewtoggle"
+                onClick={() => void toggleViewMode()}
+                aria-label={viewMode === 'donut' ? T.klineToggleToChart : T.klineToggleToDonut}
+                title={viewMode === 'donut' ? T.klineToggleToChart : T.klineToggleToDonut}
+                aria-pressed={viewMode === 'kline'}
               >
-                <Icon name="chevron-left" size={18} />
-              </button>
-              <div className="sw-dash__period">
-                <h2 className="sw-dash__month-label" id="sw-dash-period">
-                  {shown.label}
-                </h2>
-                <p className="muted sw-dash__period-sub">{periodSubtitle(shown, cycleStartDay)}</p>
-              </div>
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon"
-                onClick={() => shiftPeriod(1)}
-                aria-label="下一个周期"
-                title="下一个周期"
-              >
-                <Icon name="chevron-right" size={18} />
-              </button>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={goToCurrentPeriod}>
-                {T.thisMonth}
+                <Icon name={viewMode === 'donut' ? 'candlestick' : 'pie-chart'} size={15} />
+                <span>{viewMode === 'donut' ? T.klineTitle : T.dashPeriodTitle}</span>
               </button>
             </div>
+
+            {viewMode === 'kline' ? (
+              <KlinePanel
+                series={klineState.data}
+                loading={klineState.loading}
+                error={klineState.error}
+                displayCurrency={displayCurrency}
+                onRetry={klineState.reload}
+              />
+            ) : (
+              <>
+                <div className="sw-dash__monthbar">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon"
+                    onClick={() => shiftPeriod(-1)}
+                    aria-label="上一个周期"
+                    title="上一个周期"
+                  >
+                    <Icon name="chevron-left" size={18} />
+                  </button>
+                  <div className="sw-dash__period">
+                    <h2 className="sw-dash__month-label" id="sw-dash-period">
+                      {shown.label}
+                    </h2>
+                    <p className="muted sw-dash__period-sub">{periodSubtitle(shown, cycleStartDay)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon"
+                    onClick={() => shiftPeriod(1)}
+                    aria-label="下一个周期"
+                    title="下一个周期"
+                  >
+                    <Icon name="chevron-right" size={18} />
+                  </button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={goToCurrentPeriod}>
+                    {T.thisMonth}
+                  </button>
+                </div>
 
             {dashboardPeriodMode === 'custom' ? (
               <>
@@ -469,6 +540,8 @@ export default function DashboardPage(): JSX.Element {
                 </span>
               )}
             </div>
+              </>
+            )}
           </section>
 
           {/* ---------------- right: today, then biggest expenses ----------------
@@ -600,6 +673,63 @@ export default function DashboardPage(): JSX.Element {
             ))}
           </ul>
         </section>
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * The K-line panel: loading, error and empty states around the chart.
+ *
+ * The chart itself needs a non-empty series with at least one day, so the empty
+ * and failure states are handled here rather than inside it — a chart component
+ * that has to render its own "no data" message ends up with a second, worse empty
+ * state than the rest of the app.
+ */
+function KlinePanel({
+  series,
+  loading,
+  error,
+  displayCurrency,
+  onRetry
+}: {
+  series: KlineSeries | null
+  loading: boolean
+  error: string | null
+  displayCurrency: string
+  onRetry: () => void
+}): JSX.Element {
+  if (error && !series) {
+    return (
+      <div className="sw-dash__inline-error" role="alert">
+        <p className="muted">资金走势加载失败：{error}</p>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={onRetry}>
+          <Icon name="refresh" size={14} />
+          {T.retry}
+        </button>
+      </div>
+    )
+  }
+
+  if (!series) {
+    return loading ? <ListSkeleton rows={5} /> : <ListSkeleton rows={5} />
+  }
+
+  if (series.points.length === 0 || series.daily.length === 0) {
+    return (
+      <div className="empty-state sw-dash__empty">
+        <p>还没有可绘制的记录。记上几笔之后，这里会显示资金走势。</p>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <BalanceFlowChart series={series} displayCurrency={displayCurrency} height={430} />
+      {series.hasUnconverted ? (
+        <p className="muted sw-dash__klinenote">
+          有币种缺少汇率，这部分金额未计入曲线。在设置里刷新汇率后即可完整显示。
+        </p>
       ) : null}
     </>
   )
@@ -1024,6 +1154,77 @@ const DASHBOARD_STYLES = `
 .sw-dash__col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 .sw-dash__stack { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 .sw-dash__left { grid-row: span 1; }
+
+/* --- K线 mode: the period card takes the whole width ---
+   HOW THE EXPANSION IS BUILT, AND WHY THIS WAY
+   -------------------------------------------
+   The card is a grid item whose width is driven by the grid animation, not by a
+   transform. A scaleX transform would have been easier, but it stretches the donut
+   and every glyph inside it, and a canvas drawn at the collapsed width and then
+   blown up is visibly blurry for the whole animation.
+
+   Instead the card claims both columns and the grid animates the TRACK sizes.
+   grid-template-columns is not animatable on its own, so the tracks are pinned to
+   explicit percentages only while expanding: the browser then has two definite
+   values to interpolate between. The canvas inside redraws on every frame because
+   BalanceFlowChart observes its own width with a ResizeObserver, so the chart is
+   crisp at every intermediate size rather than only at the end.
+
+   The two list cards move down on their own, as the second grid row — no
+   animation is needed for them, and adding one would desynchronise them from the
+   card that is actually growing. */
+.sw-dash.is-expanded {
+  grid-template-columns: minmax(0, 1fr);
+  animation: dash-expand var(--duration-slow) var(--ease-out) both;
+}
+@keyframes dash-expand {
+  from { grid-template-columns: 55.5% 44.5%; }
+  to { grid-template-columns: 100% 0%; }
+}
+.sw-dash__periodCard.is-expanded { grid-column: 1 / -1; }
+.sw-dash__periodCard { position: relative; }
+/* In K线 mode the two list cards move BELOW the chart and sit side by side.
+   Stacked, they would start below a 560px card and leave the first screen mostly
+   empty; side by side they fill the row the chart just vacated. */
+.sw-dash.is-expanded .sw-dash__stack {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: start;
+}
+.sw-dash.is-expanded .sw-dash__stack > * { flex: 1 1 0; min-width: 0; }
+@media (max-width: 1099px) {
+  .sw-dash.is-expanded .sw-dash__stack { flex-direction: column; }
+}
+
+/* --- the donut / K线 toggle, top-right of the period card --- */
+.sw-dash__cardtop {
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  min-width: 0; margin-bottom: var(--space-1);
+}
+.sw-dash__cardtop > :first-child { flex: 1 1 auto; min-width: 0; }
+.sw-dash__klinehead { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sw-dash__viewtoggle {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  height: 28px; padding: 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-surface-raised);
+  color: var(--text-secondary);
+  font-size: var(--text-xs); font-weight: var(--weight-medium);
+  white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out),
+    transform var(--duration-instant) var(--ease-out);
+}
+.sw-dash__viewtoggle:hover { background-color: var(--bg-hover); border-color: var(--border-strong); color: var(--text-primary); }
+.sw-dash__viewtoggle:active { transform: scale(0.97); }
+.sw-dash__viewtoggle[aria-pressed='true'] {
+  background-color: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.sw-dash__klinenote { margin: 0; font-size: var(--text-xs); }
 .sw-dash__monthbar { display: flex; align-items: center; gap: var(--space-2); }
 .sw-dash__period { flex: 1; text-align: center; min-width: 0; }
 .sw-dash__month-label {
@@ -1136,9 +1337,9 @@ const DASHBOARD_STYLES = `
 }
 .sw-dash__mode:hover { color: var(--text-primary); }
 .sw-dash__mode.is-active {
-  background: var(--bg-elevated, var(--bg-surface, #fff));
+  background: var(--bg-surface-raised);
   color: var(--text-primary);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.08));
+  box-shadow: var(--shadow-xs);
 }
 .sw-dash__modehint { margin: 0; font-size: var(--text-xs); text-align: center; }
 .sw-dash__drill { align-self: center; }

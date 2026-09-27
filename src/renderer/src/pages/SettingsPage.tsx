@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { applyTheme, useAppStore } from '@renderer/store/app'
+import { useAppStore } from '@renderer/store/app'
 import { useRateStore } from '@renderer/store/rates'
 import { useAction, useAsync } from '@renderer/hooks/useData'
 import { Icon, iconNameOr, type IconName } from '@renderer/components/Icon'
@@ -68,8 +68,8 @@ const CURRENCY_CODES = Object.keys(CURRENCIES) as Array<keyof typeof CURRENCIES>
 const DATE_FORMATS: readonly DateFormat[] = ['DD MMM YYYY', 'DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD']
 
 const THEME_OPTIONS: ReadonlyArray<{ value: ThemeMode; label: string; description: string; icon: IconName }> = [
-  { value: 'light', label: '浅色', description: '默认主题。浅色背景配深色文字，白天最省眼。', icon: 'sun' },
-  { value: 'dark', label: '深色', description: '分层深灰，不使用纯黑，夜间看数字不刺眼。', icon: 'moon' },
+  { value: 'dark', label: '深色', description: '默认主题。近黑分层界面，和交易软件同一套观感。', icon: 'moon' },
+  { value: 'light', label: '浅色', description: '白底深字，白天或投屏时更清楚。', icon: 'sun' },
   { value: 'system', label: '跟随系统', description: '跟随 Windows 的应用主题，系统切换时自动跟随。', icon: 'palette' }
 ]
 
@@ -85,17 +85,25 @@ const RATE_ROW_LIMIT = 20
 /** Free public rate providers, tried in the order the main process lists them. */
 const RATE_PROVIDERS: readonly string[] = ['open.er-api.com', 'api.exchangerate-api.com', 'frankfurter.app']
 
-/** Colour swatches for categories. Hex values are stored in SQLite, so the picker
- *  offers the app's own palette rather than a free colour input. */
+/**
+ * Colour swatches for categories.
+ *
+ * Hex values, because they are STORED IN SQLITE on the category row — this is user
+ * data, not a theme token, so it cannot be a CSS variable. They mirror the
+ * `--chart-1..8` palette in tokens.css and are listed here in their dark-theme
+ * form: a category chip is drawn on a near-black surface, and the previous set was
+ * tuned for a white one (all eight were too dark and read as muddy grey at 15%
+ * alpha).
+ */
 const CATEGORY_COLORS: readonly string[] = [
-  '#4C6FBF',
-  '#D08C3C',
-  '#4E9C8A',
-  '#C4685E',
-  '#8A7BB8',
-  '#7A9A4E',
-  '#C77FA8',
-  '#6E8290'
+  '#4E9CF5',
+  '#F0B90B',
+  '#16C784',
+  '#F0616D',
+  '#9A8CF0',
+  '#45C4B0',
+  '#E88BC4',
+  '#8A8A93'
 ]
 
 /**
@@ -416,12 +424,19 @@ export default function SettingsPage(): React.JSX.Element {
     [categories]
   )
 
-  /** Persist a settings patch, applying the theme immediately when it changes. */
+  /**
+   * Persist a settings patch.
+   *
+   * The theme is applied by `updateSettings` itself, not here. It used to be called
+   * again from this function, which looked harmless and was not: it painted the
+   * document from the PATCH while the store still held the old value, so the next
+   * unrelated re-render reverted the theme. Applying it in exactly one place — the
+   * store action, from the value the main process actually saved — is what makes
+   * the painted theme and the stored theme the same thing.
+   */
   async function saveSetting(patch: Partial<AppSettings>, message: string): Promise<boolean> {
     const result = await run(() => updateSettings(patch), { successMessage: message })
-    if (result === null) return false
-    if (patch.theme !== undefined) applyTheme(patch.theme)
-    return true
+    return result !== null
   }
 
   async function handleDisplayCurrencyChange(code: string): Promise<void> {

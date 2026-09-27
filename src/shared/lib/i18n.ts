@@ -256,6 +256,23 @@ export const T = {
   /** Prefix for the account balance line inside the donut centre. */
   dashBalanceShort: '余额',
 
+  // K-line chart (资金流水 K 线)
+  klineTitle: '资金 K 线',
+  klineToggleToChart: '切换到 K 线图',
+  klineToggleToDonut: '切换到圆环图',
+  klineBalance: '余额',
+  /** Signed change in balance for the hovered candle. */
+  klineChange: '变动',
+  klineHoverHint: '把鼠标移到图上任意一天，查看当天的交易明细；滚轮缩放，按住拖动平移。',
+  klineResetZoom: '显示全部',
+  klineNoData: '还没有可绘制的记录',
+  /** Drawn on the chart when the balance never moved in the visible window. */
+  klineFlat: '这段时间内余额没有变化',
+  klineUnnamed: '未命名交易',
+  klineCandleLegend: 'K 线：实体为当日余额涨跌，影线为当日余额最高与最低',
+  klineFlowLegend: '柱状：向上为收入，向下为支出',
+  klineMaUnavailable: '均线需要更多数据才会出现',
+
   // Empty and error
   noData: '暂无数据',
   failedToLoad: '加载失败',
@@ -831,4 +848,14 @@ export function periodDaysZh(days: number): string {
 export function periodProgressZh(elapsed: number, total: number): string {
   const remaining = Math.max(total - elapsed, 0)
   return `已过 ${elapsed} / ${total} 天 · 还有 ${remaining} 天`
+}
+
+/** '共 N 笔' — the tooltip header on the K-line chart. */
+export function klineTxCount(count: number): string {
+  return `共 ${count} 笔`
+}
+
+/** '还有 N 笔未显示' — the K-line tooltip's overflow line. */
+export function klineMoreTx(count: number): string {
+  return `还有 ${count} 笔未显示`
 }

@@ -1,5 +1,11 @@
 import { create } from 'zustand'
-import type { AppInfo, AppSettings, DashboardPeriodMode, DashboardRange } from '@shared/types'
+import type {
+  AppInfo,
+  AppSettings,
+  DashboardPeriodMode,
+  DashboardRange,
+  DashboardViewMode
+} from '@shared/types'
 import { DEFAULT_CURRENCY } from '@shared/lib/money'
 import { useRateStore } from './rates'
 
@@ -169,6 +175,7 @@ export function useDisplaySettings(): {
   showOriginalCurrency: boolean
   dashboardPeriodMode: DashboardPeriodMode
   dashboardRange: DashboardRange | null
+  dashboardViewMode: DashboardViewMode
 } {
   const settings = useAppStore((state) => state.settings)
   return {
@@ -179,15 +186,28 @@ export function useDisplaySettings(): {
     cycleStartDay: settings?.cycleStartDay ?? 1,
     showOriginalCurrency: settings?.showOriginalCurrency ?? true,
     dashboardPeriodMode: settings?.dashboardPeriodMode ?? 'cycle',
-    dashboardRange: settings?.dashboardRange ?? null
+    dashboardRange: settings?.dashboardRange ?? null,
+    dashboardViewMode: settings?.dashboardViewMode ?? 'donut'
   }
 }
 
-/** Apply the theme to the document root. Called by the shell on every change. */
+/**
+ * Apply the theme to the document root. Called by the shell on every change.
+ *
+ * THE DEFAULT IS DARK, so this toggles `.light` rather than `.dark`. `:root` in
+ * tokens.css holds the dark palette and `.light` opts out of it, which keeps a
+ * single class doing the work in both directions and means a theme that fails to
+ * apply still leaves the user on the intended (dark) surface rather than a
+ * half-styled light page.
+ *
+ * `color-scheme` is set alongside the class so the browser paints scrollbars,
+ * form controls and the caret to match — without it a dark app gets white
+ * scrollbars, which is the detail that makes an app look unfinished.
+ */
 export function applyTheme(theme: AppSettings['theme']): void {
   const root = document.documentElement
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
   const useDark = theme === 'dark' || (theme === 'system' && prefersDark)
-  root.classList.toggle('dark', useDark)
+  root.classList.toggle('light', !useDark)
   root.style.colorScheme = useDark ? 'dark' : 'light'
 }

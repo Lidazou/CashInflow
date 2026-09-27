@@ -78,7 +78,9 @@ export const SETTINGS_KEYS = {
    * written range is impossible: either the whole range loads or none of it
    * does, and a half-restored range would silently report the wrong dates.
    */
-  dashboardRange: 'dashboard_range'
+  dashboardRange: 'dashboard_range',
+  /** Whether the period card draws the donut or the K-line chart. */
+  dashboardViewMode: 'dashboard_view_mode'
 } as const
 
 /** CSV column order for transaction export (spec §6). */

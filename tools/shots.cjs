@@ -1,10 +1,11 @@
 /**
  * Screenshot runner for docs/images/*.png.
  *
- * Opens one CDP connection, drives the app through each view, and writes a PNG per
- * step. One connection for the whole run because a single long-lived socket
- * proves far more reliable here than a fresh connection per shot — repeated
- * connects against the same target stalled after the sixth one.
+ * Opens one CDP session per step, drives the app to each view, and writes a PNG.
+ * One connection PER SHOT is the default and that is not an accident: a single
+ * long-lived socket reliably stalled on Page.captureScreenshot after a few shots —
+ * the app stayed responsive and the identical capture succeeded on a fresh
+ * connection a second later. See `connect()` for the detail.
  *
  * PREREQUISITES
  *   A running app with a debugging port AND a throwaway profile, so screenshots
@@ -14,22 +15,23 @@
  *     $env:CASHINFLOW_WINDOW_HEIGHT="1080"
  *     electron.exe . --remote-debugging-port=9222 --user-data-dir=<temp profile>
  *
- * The wide window is required: the dashboard's three-column layout only appears
- * above ~1440 CSS pixels.
+ * The wide window is required: the dashboard's two-column layout needs about 1440
+ * CSS pixels before the list cards sit beside the period card.
  *
- * Usage: node tools/shots.cjs [name ...]      (no names = all)
+ * Usage: node tools/shots.cjs [name ...]      (no names = every step)
+ *        node tools/shots.cjs --persistent    (one connection for the whole run)
  */
 const http = require('node:http')
-const { writeFileSync, mkdirSync, rmSync, existsSync, statSync } = require('node:fs')
+const { writeFileSync, mkdirSync, statSync } = require('node:fs')
 const { join } = require('node:path')
 
 const PORT = Number(process.env.CDP_PORT ?? 9222)
 const OUT_DIR = join(__dirname, '..', 'docs', 'images')
 
-const getJson = (path) =>
+const getJson = (target) =>
   new Promise((resolve, reject) => {
     http
-      .get({ host: '127.0.0.1', port: PORT, path }, (res) => {
+      .get({ host: '127.0.0.1', port: PORT, path: target }, (res) => {
         let body = ''
         res.on('data', (chunk) => (body += chunk))
         res.on('end', () => resolve(JSON.parse(body)))
@@ -39,20 +41,26 @@ const getJson = (path) =>
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/**
- * Browser-side helper source, inlined into every step.
- *
- * `setTheme` drives the header toggle rather than calling `settingsUpdate`
- * directly. The toggle is what a user does, so the screenshots exercise the real
- * path; and an earlier version of this file set the theme through the API and
- * produced a LIGHT "dark mode" screenshot, because the API writes SQLite while
- * `applyTheme` — which paints the document — is reached through the store action
- * that the toggle calls.
- */
 const HELPERS = `
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const byText = (text, selector) =>
     Array.from(document.querySelectorAll(selector)).find((el) => el.textContent.trim() === text);
+  /**
+   * Poll until the probe returns something truthy, or fail with a clear message.
+   *
+   * Every wait in this file goes through here. A fixed sleep is either too short on
+   * a slow run or wasted time on a fast one, and the failures it produces look like
+   * missing features rather than timing problems.
+   */
+  const waitFor = async (probe, what, timeoutMs = 10000) => {
+    const started = Date.now();
+    for (;;) {
+      const value = probe();
+      if (value) return value;
+      if (Date.now() - started > timeoutMs) throw new Error('timed out waiting for ' + what);
+      await sleep(120);
+    }
+  };
   /**
    * Scroll the content area back to the top.
    *
@@ -98,27 +106,96 @@ const HELPERS = `
     }
     throw new Error('could not reach theme ' + want + ' (at ' + currentTheme() + ')');
   };
-  const setPeriodMode = async (label) => {
-    const button = byText(label, '.sw-dash__mode');
-    if (!button) throw new Error('period toggle missing: ' + label);
-    button.click();
-    await sleep(1600);
-  };
   /**
    * Set the display currency through the currency bar's own select.
    *
-   * Reset explicitly rather than assuming a default: the switcher is persisted, so
-   * the dashboard-myr step used to leak MYR into every later run and produced a
-   * "CNY" screenshot showing ringgit.
+   * Reset explicitly rather than assuming a default: the switcher is persisted, so a
+   * run that shoots the MYR dashboard would otherwise leak ringgit into every later
+   * "CNY" screenshot.
    */
   const setCurrency = async (code) => {
-    const select = document.querySelector('.sw-currency-bar select');
-    if (!select) throw new Error('currency switcher missing');
+    const select = await waitFor(
+      () => document.querySelector('.sw-currency-bar select'),
+      'the currency switcher'
+    );
     const option = Array.from(select.options).find((o) => o.value === code);
     if (!option) throw new Error('currency option missing: ' + code);
     Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, code);
     select.dispatchEvent(new Event('change', { bubbles: true }));
+    // The bar refetches every converted figure on this screen, so give it a beat.
     await sleep(1800);
+    return code;
+  };
+
+  const setPeriodMode = async (label) => {
+    const button = await waitFor(() => byText(label, '.sw-dash__mode'), 'the period toggle ' + label);
+    button.click();
+    await sleep(1500);
+    return label;
+  };
+
+  /**
+   * Pin the period card to the donut or the K chart.
+   *
+   * The view mode is PERSISTED, so without this a run that photographs the chart
+   * leaves it stored and every later donut screenshot shows the chart instead.
+   */
+  const setViewMode = async (want) => {
+    const button = await waitFor(
+      () => document.querySelector('.sw-dash__viewtoggle'),
+      'the dashboard period card'
+    );
+
+    /** The control the requested mode implies: the donut re-mounts the period
+     *  toggle, the chart mounts the canvas. */
+    const probe = want === 'donut'
+      ? () => document.querySelector('.sw-dash__mode')
+      : () => document.querySelector('.kline__canvas');
+
+    if ((await window.api.settingsGet()).dashboardViewMode !== want) button.click();
+
+    /*
+      Waits on BOTH paths, deliberately. The stored setting can already be correct
+      while the page still shows the other view, because the store re-renders on a
+      later tick than the settings write resolves.
+    */
+    await waitFor(probe, 'view mode ' + want);
+    // The expand/collapse animation runs 360ms; settle past it so a screenshot is
+    // not taken mid-transition.
+    await sleep(700);
+    return want;
+  };
+
+  /**
+   * Put the dashboard into a known state and wait until it is actually there.
+   *
+   * ORDER IS LOAD-BEARING:
+   *   1. navigate and wait for the card,
+   *   2. go to the DONUT first, because the period toggle only exists there,
+   *   3. then set the period,
+   *   4. then switch to the chart if requested.
+   *
+   * Doing 3 before 2 was the bug behind three separate failures: in chart mode the
+   * period toggle is not in the document at all.
+   *
+   * @param {{ view?: 'donut'|'kline', period?: string, currency?: string, theme?: string }} want
+   */
+  const prepareDashboard = async (want = {}) => {
+    nav('总览');
+    await waitFor(() => document.querySelector('.sw-dash__viewtoggle'), 'the dashboard card', 15000);
+
+    if (want.theme) await setTheme(want.theme);
+    if (want.currency) await setCurrency(want.currency);
+
+    // Step 2 and 3 always happen in donut mode, then step 4 may switch away.
+    await setViewMode('donut');
+    if (want.period) await setPeriodMode(want.period);
+    if (want.view === 'kline') await setViewMode('kline');
+
+    await scrollTop();
+    return want.view === 'kline'
+      ? 'kline ' + (document.querySelector('.kline__ma-legend')?.innerText.replace(/\s+/g, ' ') ?? '')
+      : 'donut ' + (document.querySelector('.sw-dash__month-label')?.innerText ?? '');
   };
 `
 
@@ -135,13 +212,7 @@ const STEPS = [
     settle: 2000,
     body: `async () => {
       ${HELPERS}
-      nav('总览');
-      await sleep(1200);
-      await setTheme('light');
-      await setCurrency('CNY');
-      await setPeriodMode('结算周期');
-      await scrollTop();
-      return 'dashboard ' + (document.querySelector('.sw-dash__month-label')?.innerText ?? '');
+      return await prepareDashboard({ view: 'donut', period: '结算周期', currency: 'CNY', theme: 'dark' });
     }`
   },
   {
@@ -149,9 +220,7 @@ const STEPS = [
     settle: 1800,
     body: `async () => {
       ${HELPERS}
-      await setPeriodMode('自然月');
-      await scrollTop();
-      return 'natural month: ' + (document.querySelector('.sw-dash__month-label')?.innerText ?? '');
+      return await prepareDashboard({ view: 'donut', period: '自然月' });
     }`
   },
   {
@@ -170,7 +239,7 @@ const STEPS = [
       await window.api.settingsUpdate({
         dashboardRange: { from: iso(from), to: iso(to), label: null, budgetAmount: null }
       });
-      await setPeriodMode('自定义区间');
+      await prepareDashboard({ view: 'donut', period: '自定义区间' });
       await sleep(900);
 
       const summary = document.querySelector('.sw-dash__range-summary');
@@ -304,11 +373,7 @@ const STEPS = [
       const close = document.querySelector('[role="dialog"] button[aria-label]');
       if (close) close.click();
       await sleep(300);
-      nav('总览');
-      await sleep(900);
-      await setTheme('dark');
-      await setPeriodMode('结算周期');
-      await scrollTop();
+      await prepareDashboard({ view: 'donut', period: '结算周期', theme: 'dark' });
       return 'dark: ' + (document.documentElement.className || '(none)');
     }`
   },
@@ -317,13 +382,32 @@ const STEPS = [
     settle: 2400,
     body: `async () => {
       ${HELPERS}
-      // Back to the default settlement cycle, out of any custom range and in the
-      // light theme, so this shot is directly comparable with the CNY one.
-      await setTheme('light');
-      await setPeriodMode('结算周期');
-      await setCurrency('MYR');
-      await scrollTop();
+      // Back to the default settlement cycle and the donut view, so this shot is
+      // directly comparable with the CNY one.
+      await prepareDashboard({ view: 'donut', period: '结算周期', currency: 'MYR', theme: 'dark' });
       return 'display currency MYR (theme ' + currentTheme() + ')';
+    }`
+  },
+  {
+    name: 'dashboard-kline',
+    settle: 2600,
+    body: `async () => {
+      ${HELPERS}
+      await prepareDashboard({ view: 'kline', currency: 'CNY', theme: 'dark' });
+
+      // Hover a candle about two thirds across, which lands on a day with real
+      // transactions in the demo data, so the tooltip is populated in the shot.
+      const canvas = document.querySelector('.kline__canvas');
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const point = { clientX: rect.left + rect.width * 0.66, clientY: rect.top + rect.height * 0.44 };
+        for (const type of ['pointermove', 'mousemove']) {
+          canvas.dispatchEvent(new PointerEvent(type, { ...point, bubbles: true, pointerId: 1 }));
+        }
+        await sleep(900);
+      }
+      await scrollTop();
+      return 'kline ' + (document.querySelector('.kline__ma-legend')?.innerText.replace(/\\s+/g, ' ') ?? '');
     }`
   }
 ]

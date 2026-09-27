@@ -44,6 +44,8 @@ import type {
   ImportPreview,
   ImportPresetId,
   IpcDateRange,
+  KlineGranularity,
+  KlineSeries,
   MultiCurrencyTotals,
   RecurringRule,
   RecurringRuleInput,
@@ -107,6 +109,7 @@ export const IPC_CHANNELS = {
   statsBiggestExpenses: 'stats:biggestExpenses',
   statsStatistics: 'stats:statistics',
   statsRange: 'stats:range',
+  statsKline: 'stats:kline',
   statsCalendar: 'stats:calendar',
   statsDayTotals: 'stats:dayTotals',
   statsMonths: 'stats:months',
@@ -255,6 +258,18 @@ export interface IpcContract {
     args: [from: string, to: string]
     result: StatisticsResult
   }
+  /**
+   * The balance/flow candle series behind the dashboard's K-line view.
+   *
+   * `granularity` defaults to 'auto' in the service, which picks a bucket size
+   * from the span of the recorded history. The renderer can also pin one, but
+   * normally lets the service decide and re-buckets locally when the user zooms —
+   * see `KlineSeries.daily`.
+   */
+  [IPC_CHANNELS.statsKline]: {
+    args: [granularity?: KlineGranularity | 'auto', maWindows?: number[]]
+    result: KlineSeries
+  }
   [IPC_CHANNELS.statsCalendar]: { args: [monthKey: string]; result: CalendarMonth }
   [IPC_CHANNELS.statsDayTotals]: { args: [date: string]; result: MultiCurrencyTotals }
   [IPC_CHANNELS.statsMonths]: { args: []; result: string[] }
@@ -388,6 +403,10 @@ export interface CashInflowApi {
   ) => Promise<BiggestExpense[]>
   statsStatistics: (granularity: StatisticsGranularity, anchor: string) => Promise<StatisticsResult>
   statsRange: (from: string, to: string) => Promise<StatisticsResult>
+  statsKline: (
+    granularity?: KlineGranularity | 'auto',
+    maWindows?: number[]
+  ) => Promise<KlineSeries>
   statsCalendar: (monthKey: string) => Promise<CalendarMonth>
   statsDayTotals: (date: string) => Promise<MultiCurrencyTotals>
   statsMonths: () => Promise<string[]>

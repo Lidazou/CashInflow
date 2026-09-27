@@ -643,6 +643,140 @@ export interface BiggestExpense extends TransactionWithRefs {
 }
 
 // ---------------------------------------------------------------------------
+// K-line (balance + flow candle chart)
+// ---------------------------------------------------------------------------
+
+/**
+ * Bucket size of the K-line chart.
+ *
+ * These are the sizes a candle chart can be drawn at; which one is used is
+ * normally chosen from the span of the user's history rather than by the user,
+ * because the interesting question ("is my balance trending down?") is answered
+ * badly by both extremes — 3,000 daily candles and 3 yearly ones are equally
+ * unreadable.
+ */
+export type KlineGranularity = 'day' | 'week' | 'month' | 'quarter' | 'year'
+
+/**
+ * One candle, before the per-point extras (MA, sources, transactions) are added.
+ *
+ * `balanceOpen`/`balanceClose` are the body and `balanceHigh`/`balanceLow` the
+ * wick. The high/low come from the balance at the end of every INTERNAL period
+ * (each day inside a month bucket), not from the bucket's open and close: a
+ * salary that arrives and is spent again inside one month is invisible in the
+ * body alone, and a candle whose wick ignores it is a lie about that month.
+ */
+export interface KlineBucket {
+  /**
+   * The bucket's START date, 'YYYY-MM-DD'. This is the x-axis key.
+   *
+   * A date rather than an index or a label, because it is the only value that
+   * survives a change of granularity: the chart re-buckets on zoom and has to
+   * re-find "the bucket the cursor was on" by date, since index 40 means a
+   * different week than it means days.
+   */
+  date: string
+  /** Display label, e.g. '9月26日' / '2026年第39周' / '2026年9月' / '2026年Q3' / '2026年'. */
+  label: string
+  /** Balance at the END of this bucket, converted to the display currency, minor units. */
+  balanceClose: number
+  /** Balance at the START of this bucket (previous bucket's close; the first bucket uses the opening balance). */
+  balanceOpen: number
+  /** Highest end-of-INTERNAL-period balance inside this bucket. */
+  balanceHigh: number
+  /** Lowest end-of-INTERNAL-period balance inside this bucket. */
+  balanceLow: number
+  income: number
+  expense: number
+  net: number
+  transactionCount: number
+  /** True when at least one currency in this bucket had no usable rate, so the figures are incomplete. */
+  hasUnconverted: boolean
+}
+
+/** A candle plus everything the tooltip needs to explain it. */
+export interface KlinePoint extends KlineBucket {
+  /**
+   * Running mean of balanceClose over N buckets, or null while fewer than N
+   * buckets exist. Integer minor units.
+   *
+   * A partial-window average is never emitted: an "MA20" computed from four
+   * points is a different line that happens to look like the real one, and on a
+   * finance chart that is worse than a line that visibly starts late.
+   */
+  ma: Record<number, number | null>
+  /** Signed change in balanceClose versus the previous bucket. */
+  deltaBalance: number
+  /** Per-currency detail for the tooltip. Original units, NOT converted. */
+  sources: Array<{ currency: string; income: number; expense: number; net: number }>
+  /** The individual transactions inside this bucket, for the tooltip's breakdown. */
+  transactions: KlineTransaction[]
+}
+
+/**
+ * One transaction inside a candle, for the tooltip.
+ *
+ * `amount` is the ledger's own positive magnitude in `currency`; direction comes
+ * from `type`, exactly as in `Transaction`. `convertedAmount` is a display value
+ * and is null when no rate exists — never the original number passed off as if it
+ * had been converted.
+ */
+export interface KlineTransaction {
+  id: number
+  date: string
+  time: string | null
+  type: 'income' | 'expense'
+  amount: number
+  currency: string
+  /** Same amount converted into the display currency, minor units. Null when no rate was available. */
+  convertedAmount: number | null
+  categoryName: string | null
+  categoryColor: string | null
+  merchant: string | null
+  accountName: string
+  note: string | null
+}
+
+/**
+ * One DAY of the series, always at day resolution.
+ *
+ * The chart ships this alongside the chosen buckets because zooming has to change
+ * the bucket size, not just the visible window. Rolling 2,000 daily candles up into
+ * weeks is arithmetic on numbers that have already been converted and rounded
+ * once; re-querying the database on every wheel notch would be both slower and a
+ * second place for the conversion to disagree with the first.
+ *
+ * It IS a `KlineBucket` rather than a parallel shape, so the chart's re-bucketing
+ * code and the main process's bucketing code operate on ONE type: a zoomed-in day
+ * candle and a query-time day candle are then literally the same thing, which is
+ * what makes the "summing dailies equals the buckets" invariant checkable instead
+ * of merely asserted.
+ */
+export type KlineDaily = KlineBucket
+
+export interface KlineSeries {
+  granularity: KlineGranularity
+  /** Every bucket in the user's recorded history, oldest first. Never truncated. */
+  points: KlinePoint[]
+  /**
+   * Every day from `from` to `to`, inclusive and gapless. The chart re-buckets
+   * from this when the user zooms, so a zoom never needs a second round trip.
+   */
+  daily: KlineDaily[]
+  /** Which MA windows were computed, e.g. [5, 10, 20, 60, 250]. */
+  maWindows: number[]
+  currency: string
+  /** First and last date covered, for the range readout. */
+  from: string
+  to: string
+  /** Opening balance across accounts at `from`, converted. This is the y-axis baseline. */
+  openingBalance: number
+  hasUnconverted: boolean
+  /** Earliest bucket date for which every MA window has a full window behind it. Lets the UI explain why a line starts partway in. */
+  maReadyFrom: Record<number, string | null>
+}
+
+// ---------------------------------------------------------------------------
 // Search
 // ---------------------------------------------------------------------------
 
@@ -692,6 +826,18 @@ export interface DashboardRange {
   budgetAmount?: number | null
 }
 
+/**
+ * How the dashboard's period card is drawn.
+ *
+ *   donut  the 3D category ring — "where did this period's money go"
+ *   kline  the balance/flow candle chart — "how is my balance actually moving"
+ *
+ * Persisted rather than component state because it is a working preference: a
+ * user who watches their balance as a chart should not have to switch back every
+ * launch.
+ */
+export type DashboardViewMode = 'donut' | 'kline'
+
 export interface AppSettings {
   baseCurrency: string
   startOfWeek: 0 | 1
@@ -728,6 +874,8 @@ export interface AppSettings {
   dashboardPeriodMode: DashboardPeriodMode
   /** The window used when `dashboardPeriodMode` is 'custom'. */
   dashboardRange: DashboardRange | null
+  /** Whether the period card shows the donut or the K-line chart. */
+  dashboardViewMode: DashboardViewMode
 }
 
 // ---------------------------------------------------------------------------

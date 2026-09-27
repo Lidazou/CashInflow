@@ -23,6 +23,7 @@ import type {
   ImportCommitRequest,
   ImportPresetId,
   IpcDateRange,
+  KlineGranularity,
   RecurringRuleInput,
   StatisticsGranularity,
   SubscriptionInput,
@@ -350,6 +351,38 @@ export function registerIpcHandlers(context: IpcContext): void {
       currency
     )
   })
+
+  /**
+   * The balance/flow candle series for the dashboard's K-line view.
+   *
+   * Granularity and MA windows are validated here rather than trusted: the
+   * service's arithmetic is exact but the MA windows become the number of passes
+   * it makes over the series, so an unvalidated array of a thousand windows from
+   * a compromised renderer would be a cheap denial of service. The allow-list is
+   * the set the UI actually offers.
+   */
+  handle<[KlineGranularity | 'auto' | undefined, number[] | undefined], unknown>(
+    IPC_CHANNELS.statsKline,
+    context,
+    {},
+    (granularity, maWindows) => {
+      const { currency } = displayContext()
+
+      const allowed: Array<KlineGranularity | 'auto'> = ['auto', 'day', 'week', 'month', 'quarter', 'year']
+      const safeGranularity = allowed.includes(granularity as KlineGranularity | 'auto')
+        ? (granularity as KlineGranularity | 'auto')
+        : 'auto'
+
+      const safeWindows = Array.isArray(maWindows)
+        ? maWindows
+            .filter((value) => typeof value === 'number' && Number.isFinite(value))
+            .map((value) => Math.max(2, Math.min(500, Math.trunc(value))))
+            .slice(0, 8)
+        : []
+
+      return svc().kline.series(currency, safeGranularity, safeWindows.length > 0 ? safeWindows : undefined)
+    }
+  )
 
   handle<[string], unknown>(IPC_CHANNELS.statsCalendar, context, {}, (monthKey) => {
     const { currency } = displayContext()

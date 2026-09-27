@@ -28,7 +28,7 @@ import SettingsPage from './pages/SettingsPage'
 export default function App(): React.JSX.Element {
   const ready = useAppStore((state) => state.ready)
   const bootError = useAppStore((state) => state.bootError)
-  const theme = useAppStore((state) => state.settings?.theme ?? 'light')
+  const theme = useAppStore((state) => state.settings?.theme ?? 'dark')
   const bootstrap = useAppStore((state) => state.bootstrap)
 
   useEffect(() => {

@@ -124,7 +124,9 @@ export class SettingsService {
       displayCurrency: isSupportedCurrency(displayCurrency) ? displayCurrency : DEFAULT_CURRENCY,
       startOfWeek: startOfWeek === '0' ? 0 : 1,
       dateFormat: dateFormat && DATE_FORMATS.includes(dateFormat) ? dateFormat : 'DD MMM YYYY',
-      theme: theme && THEMES.includes(theme) ? theme : 'light',
+      // Dark is the DEFAULT. The stored value is still whatever the user chose;
+      // this fallback only applies before they have ever chosen.
+      theme: theme && THEMES.includes(theme) ? theme : 'dark',
       locale: raw.get(SETTINGS_KEYS.locale) ?? 'zh-CN',
       hasCompletedOnboarding: raw.get(SETTINGS_KEYS.hasCompletedOnboarding) === 'true',
       lastBackupAt,
@@ -140,7 +142,11 @@ export class SettingsService {
       dashboardPeriodMode: PERIOD_MODES.includes(raw.get(SETTINGS_KEYS.dashboardPeriodMode) as DashboardPeriodMode)
         ? (raw.get(SETTINGS_KEYS.dashboardPeriodMode) as DashboardPeriodMode)
         : 'cycle',
-      dashboardRange: parseDashboardRange(raw.get(SETTINGS_KEYS.dashboardRange))
+      dashboardRange: parseDashboardRange(raw.get(SETTINGS_KEYS.dashboardRange)),
+      // The donut is the default because it answers the question a new user has
+      // ("what did I spend on?") in one glance; the chart answers a question you
+      // have once you already know your categories.
+      dashboardViewMode: raw.get(SETTINGS_KEYS.dashboardViewMode) === 'kline' ? 'kline' : 'donut'
     }
   }
 
@@ -164,6 +170,13 @@ export class SettingsService {
     }
     if (patch.dashboardPeriodMode !== undefined && !PERIOD_MODES.includes(patch.dashboardPeriodMode)) {
       errors.dashboardPeriodMode = '统计周期只能是自然月、结算周期或自定义区间。'
+    }
+    if (
+      patch.dashboardViewMode !== undefined &&
+      patch.dashboardViewMode !== 'donut' &&
+      patch.dashboardViewMode !== 'kline'
+    ) {
+      errors.dashboardViewMode = '总览视图只能是圆环图或 K 线图。'
     }
     if (patch.dashboardRange !== undefined && patch.dashboardRange !== null) {
       const range = patch.dashboardRange
@@ -224,6 +237,9 @@ export class SettingsService {
       }
       if (patch.dashboardPeriodMode !== undefined) {
         set(SETTINGS_KEYS.dashboardPeriodMode, patch.dashboardPeriodMode)
+      }
+      if (patch.dashboardViewMode !== undefined) {
+        set(SETTINGS_KEYS.dashboardViewMode, patch.dashboardViewMode)
       }
       if (patch.dashboardRange !== undefined) {
         // Empty string is how a cleared range is stored, matching `nullIfEmpty`

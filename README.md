@@ -1,6 +1,6 @@
 # CashInflow
 
-**给中国留学生的本地记账本** · 多币种实时汇率 · 首页可切自然月 / 生活费周期 / 任意区间
+**给中国留学生的本地记账本** · 多币种实时汇率 · 首页可切自然月 / 生活费周期 / 任意区间 · 资金 K 线
 
 <p>
   <img alt="Electron" src="https://img.shields.io/badge/Electron-44-2B2E3A?logo=electron&logoColor=white">
@@ -8,7 +8,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white">
   <img alt="Release" src="https://img.shields.io/github/v/release/Lidazou/CashInflow?color=16A34A&label=release">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-232%20passing-16A34A">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-265%20passing-16A34A">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white">
 </p>
@@ -22,11 +22,40 @@
 一个运行在 Windows 上的个人记账软件。所有数据保存在你自己电脑的 SQLite 数据库里，
 不需要注册账号，不联网也能完整使用。
 
-它和普通记账 App 的区别在四个地方。
+界面按交易软件的观感重做：近黑分层背景、发丝级描边代替阴影、金额一律等宽对齐，
+**默认深色**，浅色主题保留。
+
+它和普通记账 App 的区别在5个地方。
 
 ---
 
-### 1️⃣ 首页可以切换统计周期：自然月 / 结算周期 / 自定义区间
+### 1️⃣ 首页圆环可以变成资金 K 线图
+
+圆环右上角有一个切换按钮。点一下，这块卡片会**横向展开占满整个首页宽度**，
+「今天」和「支出排行」自然下移到它下面，然后原来的圆环位置变成一张看盘风格的
+K 线图：
+
+![资金 K 线](docs/images/dashboard-kline.png)
+
+| 图上的东西 | 含义 |
+|---|---|
+| **K 线实体** | 当天的余额从开盘到收盘。绿 = 余额上涨，红 = 余额下跌 |
+| **上下影线** | 当天余额的最高点和最低点，所以月中到账一笔钱不会被实体掩盖 |
+| **柱状（下半区）** | 向上是当天收入，向下是当天支出。单独一个量程，所以 ¥12,000 的余额不会把一杯咖啡压成一条线 |
+| **MA5 / 10 / 20 / 60 / 250** | 余额的移动平均线。数据不够 250 天时那条线**不画**，图例显示 `—`，而不是用 12 个点硬算一条看起来很像的假线 |
+| **十字光标** | 鼠标移到任意一天，出现虚线、纵轴价格标、横轴日期标，以及一个方框列出当天的每一笔交易（金额、商家、分类、账户、时间） |
+
+**默认显示你记录过的全部时间范围**，不用先操作就能看到全貌：
+
+- **滚轮缩放**，缩小时粒度会自动从「日」变成「周 / 月 / 季 / 年」——放大看到的是**更多细节**，
+  不是把同一张图拉大
+- **按住拖动平移**，点「显示全部」回到全貌
+- 滚轮缩放会尝试保持光标下那一天不动，切换粒度时按**日期**重新定位，不会跳到无关的时间段
+- 均线是对**完整序列**算完再裁到可见窗口的，不会在视口左边缘重新开始
+
+---
+
+### 2️⃣ 首页可以切换统计周期：自然月 / 结算周期 / 自定义区间
 
 **这是整个软件最核心的设计。**
 
@@ -105,7 +134,7 @@ CashInflow 把它交给你：
 
 ---
 
-### 2️⃣ 真正的多币种，切换一下所有数字立刻变
+### 3️⃣ 真正的多币种，切换一下所有数字立刻变
 
 人民币、马币、新币、美元、港币……同时持有多个币种账户。顶部切换显示货币，
 **首页、交易明细、统计、总账**会一起换算。
@@ -123,7 +152,7 @@ CashInflow 把它交给你：
 
 ---
 
-### 3️⃣ 导入微信 / 支付宝 / 银行账单
+### 4️⃣ 导入微信 / 支付宝 / 银行账单
 
 不用手工录入。导出账单文件，选进来：
 
@@ -136,7 +165,7 @@ CashInflow 把它交给你：
 
 ![记一笔](docs/images/add-transaction.png)
 
-### 4️⃣ 算错的代价是「你照着错的数字做了决定」
+### 5️⃣ 算错的代价是「你照着错的数字做了决定」
 
 金融软件出错的代价不是「不好看」。所以下面这些不是泛泛的「最佳实践」，而是
 具体防住了某类真实 bug 的做法——完整清单见 [优势：数据正确性](#优势数据正确性)：
@@ -152,6 +181,13 @@ CashInflow 把它交给你：
 ---
 
 ## 功能截图
+
+### 资金 K 线：把首页当看盘软件用
+
+纵轴金额、横轴时间。余额涨绿跌红，每日收支在下方单独量程里画柱，鼠标扫过任意一天
+都会出方框列出当天的交易，旁边是 MA5/10/20/60/250。
+
+![资金 K 线](docs/images/dashboard-kline.png)
 
 ### 统计分析：趋势、构成、日历
 
@@ -304,8 +340,8 @@ Cash      +500.00    转账腿
 
 | 文件 | 说明 |
 |---|---|
-| `CashInflow-1.3.2-x64-setup.exe` | **安装版**。创建开始菜单与桌面快捷方式，并注册卸载项 |
-| `CashInflow-1.3.2-x64-portable.exe` | **免安装单文件版**。直接双击运行，不写注册表、不建快捷方式 |
+| `CashInflow-1.4.0-x64-setup.exe` | **安装版**。创建开始菜单与桌面快捷方式，并注册卸载项 |
+| `CashInflow-1.4.0-x64-portable.exe` | **免安装单文件版**。直接双击运行，不写注册表、不建快捷方式 |
 | `SHA256SUMS.txt` | 上面两个文件的 SHA-256 校验和 |
 
 两个版本功能完全相同，读写同一个数据库。
@@ -420,7 +456,7 @@ powershell -File tools/make-diagram.ps1
 npm test
 ```
 
-**232 个用例，跑真实 SQLite 文件，不用 mock。**
+**265 个用例，跑真实 SQLite 文件，不用 mock。**
 
 | 测试文件 | 覆盖内容 |
 |---|---|
@@ -428,6 +464,7 @@ npm test
 | `rates.test.ts` | 换算舍入、交叉汇率、缺失汇率、新鲜度分级 |
 | `periods.test.ts` | 周期运算、**日历无缝铺满**、任意区间校验 |
 | `dashboard-period.test.ts` | **首页三种周期模式**：窗口解析、按周期取数、切换后设置不被改写 |
+| `kline.test.ts` | **资金 K 线**：自适应粒度阈值、无缺口补桶、均线窗口、跨币种单次舍入、日/桶一致性 |
 | `multi-currency.test.ts` | 服务层跨币种聚合、周期感知预算、离线汇率回退 |
 | `ledger.test.ts` | schema 与迁移、余额、转账、校验、引用完整性、持久化 |
 | `import-parser.test.ts` | RFC 4180、分隔符嗅探、表头定位、日期金额归一化 |
@@ -491,12 +528,29 @@ Maybank → Cash RM500 后，两个账户余额之和不变，本期支出不变
 | 界面 | React 19 + TypeScript | 开发快，长期可维护 |
 | 构建 | electron-vite 5 + Vite 7 | 一份配置产出 main / preload / renderer 三个包 |
 | 数据库 | better-sqlite3 13 | 真正的嵌入式关系库，同步 API，零配置 |
-| 图表 | 手写 SVG | 不需要图表库；这个应用只需要五种图形 |
+| 图表 | 手写 SVG（小图）+ Canvas（K 线） | 见下 |
 | 状态 | Zustand | 很小，且只有真正全局的状态才放进去 |
 | 表格 | ExcelJS | MIT 协议，支持流式读取 XLSX |
 | 测试 | Vitest | 快，且跑真实数据库而不是 mock |
 
 **运行时依赖只有两个：`better-sqlite3` 和 `exceljs`。**
+
+### 为什么 K 线图没有用图表库
+
+参考了 [KLineChart](https://github.com/klinecharts/KLineChart)（零依赖、Canvas 渲染、
+自带均线与十字光标）的架构，但**没有引入它**，两个原因：
+
+1. **数据模型对不上。** 它的输入是 OHLC 行情；这里的「K 线」是**每日余额 + 当日收支**，
+   柱子还要按笔画出交易分隔刻度，悬停要列出当天每一笔流水。硬套 OHLC 会在中间加一层
+   翻译代码，而那一层正是最容易算错的地方。
+2. **配色必须跟着主题走。** 涨跌色从 CSS 变量里读：深色绿涨红跌，浅色按国内习惯红涨绿跌。
+   自绘 Canvas 直接读 `getComputedStyle` 就够了，套库反而要绕一圈。
+
+真正拿过来的是它的**做法**：视口模型（可见区间 + 偏移）、十字光标与轴标签、在完整序列上算
+均线再裁到视口、按跨度自适应粒度、换粒度时按日期重新定位。
+
+统计页那几个小图仍然是手写 SVG —— 那里节点少，SVG 更好写也更好调试；到了几千根蜡烛还要
+跟着光标实时平移，SVG 就会卡。
 
 ### 打包时最关键的一行
 
@@ -555,7 +609,7 @@ rather than silently treated as 1:1.
 exchange-rate lookup; the renderer is forbidden from making any outbound
 connection by its Content-Security-Policy.
 
-**232 tests** run against a real SQLite file, including the specification's
+**265 tests** run against a real SQLite file, including the specification's
 acceptance criteria as executable tests.
 
 ---

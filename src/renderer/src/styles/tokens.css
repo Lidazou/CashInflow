@@ -1,73 +1,126 @@
 /* ============================================================================
    CashInflow — Design Tokens
    Single source of truth for colour, type, space, radius and motion.
-   Light is the DEFAULT theme; `.dark` on <html> opts into dark mode.
-   Dark keeps the SAME hierarchy via layered surfaces (never black + white).
-   Component styles live in global.css — nothing but tokens here.
+
+   THE PALETTE IS AN EXCHANGE TERMINAL, NOT A NOTEBOOK
+   ---------------------------------------------------
+   The visual language is modelled on a crypto exchange (OKX): near-black
+   layered surfaces, hairline dividers instead of shadows, tabular figures
+   everywhere money appears, and one saturated accent reserved for interaction.
+   Two consequences are deliberate and worth stating, because both look like
+   mistakes until you know why:
+
+     1. DARK IS THE DEFAULT. `:root` holds the dark palette and `.light` on
+        <html> opts out. A finance screen is looked at in the evening, next to a
+        broker app, and a bright white panel next to a dark one is the single
+        most jarring thing this app could do. The previous build had this
+        backwards and it showed.
+
+     2. NO SHADOWS ON CARDS. Depth comes from a one-pixel border plus a slightly
+        lighter surface, exactly as on a trading screen. Shadows on a near-black
+        background are invisible anyway, so a card that "lifts" with a shadow
+        would simply vanish when the user switched theme.
+
+   TWO MONEY PALETTES, ON PURPOSE
+   ------------------------------
+   `--income` / `--expense` are CASHFLOW semantics: money in, money out. They
+   are used by the ledger, budgets, statistics and every amount on screen.
+
+   `--market-up` / `--market-down` are MARKET semantics: the balance line went
+   up, the balance line went down. Only the K-line chart uses them.
+
+   They are separate because the two can legitimately want different colours in
+   the light theme (the chart follows the Chinese convention of red-up, while a
+   red "income" row in a transaction list would be wrong), and because a future
+   user preference for "red means up" should move the chart without repainting
+   the ledger. In the dark theme they currently agree.
    ========================================================================= */
 
-/* ---- theme: light (default) ---- */
+/* ---- theme: dark (DEFAULT) ------------------------------------------------
+   Layered, never black + white. app < surface < raised < inset, so a card can
+   sit on a card without a border doing all the work. */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
-  /* surfaces — layered: app < surface < raised */
-  --bg-app: #F7F7F5;
-  --bg-surface: #FFFFFF;
-  --bg-surface-raised: #FFFFFF;
-  --bg-inset: #EFEFEC;
-  --bg-hover: #F1F1EE;
-  --bg-active: #E7E7E2;
+  /* surfaces */
+  --bg-app: #0A0A0B;
+  --bg-surface: #121214;
+  --bg-surface-raised: #1A1A1D;
+  --bg-inset: #08080A;
+  --bg-hover: #1E1E22;
+  --bg-active: #26262B;
+  /* A translucent wash for sticky headers and modals over content. */
+  --bg-scrim: rgba(0, 0, 0, 0.62);
+  --bg-glass: rgba(18, 18, 20, 0.78);
 
   /* text */
-  --text-primary: #1F1F1F;
-  --text-secondary: #777777;
-  --text-tertiary: #8E8E8E;
-  --text-inverse: #FFFFFF;
-  --text-on-accent: #FFFFFF;
+  --text-primary: #F5F5F7;
+  --text-secondary: #9A9AA2;
+  --text-tertiary: #6E6E77;
+  --text-inverse: #0A0A0B;
+  --text-on-accent: #0A0A0B;
 
-  /* borders */
-  --border-subtle: #EBEBE7;
-  --border-default: #DDDDD8;
-  --border-strong: #C6C6C0;
+  /* borders — the primary depth device in this design */
+  --border-subtle: #1E1E22;
+  --border-default: #2A2A30;
+  --border-strong: #3A3A42;
 
-  /* accent — restrained indigo. Primary actions, focus, selection, active nav.
-     Never used to encode money. */
-  --accent: #4F46E5;
-  --accent-hover: #4338CA;
-  --accent-active: #3730A3;
-  --accent-subtle: #EEF0FE;
-  --accent-text: #4338CA;
+  /* accent — interaction only: focus, selection, active nav, primary action.
+     Never used to encode money. OKX's signature is a near-white primary button
+     on a dark surface, with the accent reserved for state. */
+  --accent: #7C5CFF;
+  --accent-hover: #8E72FF;
+  --accent-active: #6A48F5;
+  --accent-subtle: #1E1A33;
+  --accent-text: #A894FF;
+  --accent-glow: rgba(124, 92, 255, 0.35);
 
-  /* semantic money — the only place colour carries meaning */
-  --income: #2E7D5B;
-  --income-subtle: #E7F2EC;
-  --expense: #C0392B;
-  --expense-subtle: #FAEBE9;
-  --warning: #A9761B;
-  --warning-subtle: #FAF2E2;
-  --neutral: #6B7280;
+  /* semantic money — cashflow */
+  --income: #16C784;
+  --income-subtle: rgba(22, 199, 132, 0.12);
+  --expense: #F0616D;
+  --expense-subtle: rgba(240, 97, 109, 0.12);
+  --warning: #F0B90B;
+  --warning-subtle: rgba(240, 185, 11, 0.12);
+  --neutral: #8A8A93;
 
-  /* categorical chart palette — muted, colour-blind-aware, 8 steps */
-  --chart-1: #4C6FBF;
-  --chart-2: #D08C3C;
-  --chart-3: #4E9C8A;
-  --chart-4: #C4685E;
-  --chart-5: #8A7BB8;
-  --chart-6: #7A9A4E;
-  --chart-7: #C77FA8;
-  --chart-8: #6E8290;
+  /* semantic money — market movement (K-line only) */
+  --market-up: #16C784;
+  --market-up-soft: rgba(22, 199, 132, 0.22);
+  --market-down: #F0616D;
+  --market-down-soft: rgba(240, 97, 109, 0.22);
+  --market-grid: #1A1A1E;
+  --market-axis: #6E6E77;
+  --market-crosshair: #8A8A93;
+  --market-ma-1: #F0B90B;
+  --market-ma-2: #4E9CF5;
+  --market-ma-3: #C77FA8;
+  --market-ma-4: #45C4B0;
+  --market-ma-5: #9A8CF0;
 
-  /* radii */
+  /* categorical chart palette — 8 steps, distinguishable on near-black */
+  --chart-1: #4E9CF5;
+  --chart-2: #F0B90B;
+  --chart-3: #16C784;
+  --chart-4: #F0616D;
+  --chart-5: #9A8CF0;
+  --chart-6: #45C4B0;
+  --chart-7: #E88BC4;
+  --chart-8: #8A8A93;
+
+  /* radii — tighter than a consumer app: a terminal reads as precise, not soft */
+  --radius-xs: 4px;
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --radius-full: 999px;
 
-  /* shadows — whisper-quiet. No glow, no heavy elevation. */
-  --shadow-xs: 0 1px 2px rgba(31, 31, 31, 0.04);
-  --shadow-sm: 0 1px 3px rgba(31, 31, 31, 0.06), 0 1px 2px rgba(31, 31, 31, 0.04);
-  --shadow-md: 0 4px 12px rgba(31, 31, 31, 0.07), 0 1px 3px rgba(31, 31, 31, 0.05);
+  /* shadows — only for things that genuinely float above the page */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.55);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.72);
 
   /* spacing — 4px base */
   --space-1: 4px;
@@ -83,7 +136,7 @@
 
   /* typography */
   --font-sans: Inter, "Segoe UI", -apple-system, system-ui, sans-serif;
-  --font-mono: "Cascadia Mono", Consolas, monospace;
+  --font-mono: "Cascadia Mono", Consolas, "SF Mono", monospace;
   --text-2xs: 11px;
   --text-xs: 12px;
   --text-sm: 13px;
@@ -97,84 +150,126 @@
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
-  --leading-tight: 1.25;
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
   --leading-normal: 1.5;
+  /* Money must line up in columns across every screen in the app. */
+  --numeric: tabular-nums;
 
   /* focus ring — keyboard accessibility is non-negotiable */
-  --ring: rgba(79, 70, 229, 0.45);
+  --ring: rgba(124, 92, 255, 0.55);
   --ring-width: 2px;
 
   /* layout */
-  --sidebar-width: 208px;
+  --sidebar-width: 216px;
   --header-height: 56px;
   --bottom-bar-height: 64px;
 
-  /* motion */
-  --duration-fast: 120ms;
-  --duration-base: 180ms;
+  /* motion — modelled on iOS/macOS: short, decelerating, never bouncy enough to
+     distract. `--ease-spring` is the small overshoot used for a card that grows
+     into a larger view; `--ease-out` is the workhorse. */
+  --duration-instant: 90ms;
+  --duration-fast: 160ms;
+  --duration-base: 240ms;
+  --duration-slow: 360ms;
+  --duration-slower: 460ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-base: background-color var(--duration-base) var(--ease-out),
-    border-color var(--duration-base) var(--ease-out), color var(--duration-base) var(--ease-out),
-    box-shadow var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-out);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.42, 0.5, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
 }
 
-/* ---- theme: dark — layered greys, accent stays readable ---- */
-.dark {
-  color-scheme: dark;
+/* ---- theme: light — the same hierarchy, inverted --------------------------
+   Not a tint of the dark theme: the surfaces move the other way (raised is
+   WHITE and app is grey), because on a light screen depth reads as "brighter =
+   closer". Market colours keep the red-up convention while cashflow semantics
+   keep green-income. */
+.light {
+  color-scheme: light;
 
-  --bg-app: #141414;
-  --bg-surface: #1C1C1C;
-  --bg-surface-raised: #232323;
-  --bg-inset: #101010;
-  --bg-hover: #262626;
-  --bg-active: #2E2E2E;
+  --bg-app: #F4F5F7;
+  --bg-surface: #FFFFFF;
+  --bg-surface-raised: #FFFFFF;
+  --bg-inset: #EDEEF1;
+  --bg-hover: #F2F3F6;
+  --bg-active: #E7E9ED;
+  --bg-scrim: rgba(16, 18, 24, 0.42);
+  --bg-glass: rgba(255, 255, 255, 0.82);
 
-  --text-primary: #EDEDED;
-  --text-secondary: #A0A0A0;
-  --text-tertiary: #8A8A8A;
-  --text-inverse: #141414;
+  --text-primary: #101114;
+  --text-secondary: #5C6069;
+  --text-tertiary: #8A8F99;
+  --text-inverse: #FFFFFF;
   --text-on-accent: #FFFFFF;
 
-  --border-subtle: #262626;
-  --border-default: #333333;
-  --border-strong: #454545;
+  --border-subtle: #E9EAEE;
+  --border-default: #DCDFE5;
+  --border-strong: #C3C7CF;
 
-  --accent: #5B5FE8;
-  --accent-hover: #6E72F0;
-  --accent-active: #4F46E5;
-  --accent-subtle: #24244A;
-  --accent-text: #A5B4FC;
+  --accent: #6A48F5;
+  --accent-hover: #5B39E8;
+  --accent-active: #4E2ED6;
+  --accent-subtle: #EFEBFE;
+  --accent-text: #5335D6;
+  --accent-glow: rgba(106, 72, 245, 0.22);
 
-  --income: #4FB286;
-  --income-subtle: #14291F;
-  --expense: #E06C60;
-  --expense-subtle: #2E1917;
-  --warning: #D9A441;
-  --warning-subtle: #2E2415;
-  --neutral: #8A8A8A;
+  --income: #0E9F6E;
+  --income-subtle: #E6F6F0;
+  --expense: #D93B4A;
+  --expense-subtle: #FDECEE;
+  --warning: #B57F09;
+  --warning-subtle: #FDF5E3;
+  --neutral: #6B7280;
 
-  --chart-1: #7C97DE;
-  --chart-2: #E0A961;
-  --chart-3: #6FBBA6;
-  --chart-4: #DC8A80;
-  --chart-5: #A99BD4;
-  --chart-6: #9DBB72;
-  --chart-7: #DB9DBF;
-  --chart-8: #94A6B4;
+  /* red-up, as every Chinese trading terminal draws it */
+  --market-up: #D93B4A;
+  --market-up-soft: rgba(217, 59, 74, 0.16);
+  --market-down: #0E9F6E;
+  --market-down-soft: rgba(14, 159, 110, 0.16);
+  --market-grid: #EFF0F4;
+  --market-axis: #8A8F99;
+  --market-crosshair: #5C6069;
+  --market-ma-1: #B57F09;
+  --market-ma-2: #2E6FD9;
+  --market-ma-3: #B85A92;
+  --market-ma-4: #1F9E8C;
+  --market-ma-5: #6A48F5;
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.40);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.50), 0 1px 2px rgba(0, 0, 0, 0.40);
-  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.40);
+  --chart-1: #2E6FD9;
+  --chart-2: #B57F09;
+  --chart-3: #0E9F6E;
+  --chart-4: #D93B4A;
+  --chart-5: #6A48F5;
+  --chart-6: #1F9E8C;
+  --chart-7: #B85A92;
+  --chart-8: #6B7280;
 
-  --ring: rgba(129, 140, 248, 0.55);
+  --shadow-xs: 0 1px 2px rgba(16, 17, 20, 0.05);
+  --shadow-sm: 0 2px 8px rgba(16, 17, 20, 0.07);
+  --shadow-md: 0 12px 32px rgba(16, 17, 20, 0.10), 0 2px 8px rgba(16, 17, 20, 0.06);
+  --shadow-lg: 0 24px 64px rgba(16, 17, 20, 0.14);
+
+  --ring: rgba(106, 72, 245, 0.40);
 }
 
-/* ---- reduced motion — neutralise durations, keep state changes instant ---- */
+/* ---- reduced motion — neutralise durations, keep state changes instant ----
+   The transforms and opacity values still apply; only the TIME goes away, so a
+   reduced-motion user gets the same layout and the same information without any
+   movement to track. Setting the durations to 1ms rather than 0 matters: a 0ms
+   transition can be skipped entirely by the compositor, leaving an element stuck
+   at its start value in some engines. */
 @media (prefers-reduced-motion: reduce) {
   :root,
-  .dark {
+  .light {
+    --duration-instant: 1ms;
     --duration-fast: 1ms;
     --duration-base: 1ms;
+    --duration-slow: 1ms;
+    --duration-slower: 1ms;
+    --ease-spring: linear;
     --transition-base: none;
   }
 }

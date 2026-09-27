@@ -63,6 +63,8 @@ export type IconName =
   | 'palette'
   | 'inbox'
   | 'refresh'
+  | 'candlestick'
+  | 'pie-chart'
 
 /** Path data per icon. Single-path icons keep the renderer simple. */
 const PATHS: Record<IconName, string> = {
@@ -118,7 +120,10 @@ const PATHS: Record<IconName, string> = {
   moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
   palette: 'M12 21a9 9 0 1 1 0-18c5 0 9 3.6 9 8 0 2.2-1.8 4-4 4h-1.5a2 2 0 0 0-1.4 3.4A2 2 0 0 1 12 21zM7.5 10.5h.01M11 7.5h.01M15.5 9h.01',
   inbox: 'M3 12h5l2 3h4l2-3h5M3 12l3-8h12l3 8v7H3z',
-  refresh: 'M21 12a9 9 0 1 1-3-6.7M21 4v5h-5'
+  refresh: 'M21 12a9 9 0 1 1-3-6.7M21 4v5h-5',
+  // Two candles with wicks, drawn so the taller one reads as a rise.
+  candlestick: 'M8 4v3M8 17v3M6 7h4v10H6zM16 9v2M16 19v2M14 11h4v8h-4z',
+  'pie-chart': 'M12 3a9 9 0 1 0 9 9h-9z'
 }
 
 export interface IconProps {

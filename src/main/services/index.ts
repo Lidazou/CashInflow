@@ -3,6 +3,7 @@ import { AccountsService } from './accounts'
 import { CategoriesService } from './categories'
 import { TransactionsService } from './transactions'
 import { StatisticsService } from './statistics'
+import { KlineService } from './kline'
 import { ImportService } from './import'
 import { BudgetsService, RecurringService, SettingsService, SubscriptionsService } from './settings'
 import { DemoDataService } from './demo'
@@ -23,6 +24,7 @@ export class Services {
   readonly categories: CategoriesService
   readonly transactions: TransactionsService
   readonly statistics: StatisticsService
+  readonly kline: KlineService
   readonly imports: ImportService
   readonly settings: SettingsService
   readonly budgets: BudgetsService
@@ -45,6 +47,12 @@ export class Services {
     // database. This is a lazy read rather than a construction-time value so a
     // later refresh is picked up without rebuilding the service graph.
     this.statistics = new StatisticsService(db, () => this.exchange.getTable())
+
+    // The K-line chart reads the same cached table through the same lazy provider
+    // as statistics, for the same reason: a rates refresh must be picked up
+    // without rebuilding the service graph, and a rates failure must not take the
+    // chart down.
+    this.kline = new KlineService(db, () => this.exchange.getTable())
 
     this.budgets = new BudgetsService(db)
     this.subscriptions = new SubscriptionsService(db)

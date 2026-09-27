@@ -113,6 +113,8 @@ const api = {
   statsStatistics: (granularity: string, anchor: string) =>
     invoke(IPC_CHANNELS.statsStatistics, granularity, anchor),
   statsRange: (from: string, to: string) => invoke(IPC_CHANNELS.statsRange, from, to),
+  statsKline: (granularity?: string, maWindows?: number[]) =>
+    invoke(IPC_CHANNELS.statsKline, granularity, maWindows),
   statsCalendar: (monthKey: string) => invoke(IPC_CHANNELS.statsCalendar, monthKey),
   statsDayTotals: (date: string) => invoke(IPC_CHANNELS.statsDayTotals, date),
   statsMonths: () => invoke(IPC_CHANNELS.statsMonths),

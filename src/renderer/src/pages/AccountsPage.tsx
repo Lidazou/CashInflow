@@ -1055,7 +1055,7 @@ const ACCOUNTS_CSS = `
   position: fixed; inset: 0; z-index: 60;
   display: flex; align-items: flex-start; justify-content: center;
   padding: 6vh var(--space-6) var(--space-6);
-  background: rgba(15, 15, 15, 0.42);
+  background: var(--bg-scrim);
   overflow-y: auto;
 }
 .ac-dialog {

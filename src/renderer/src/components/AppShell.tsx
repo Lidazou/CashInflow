@@ -65,8 +65,8 @@ const PAGE_TITLES: ReadonlyArray<{ path: string; title: string }> = [
   { path: '/settings', title: '设置' }
 ]
 
-/** Theme cycles light -> dark -> system, matching the settings values. */
-const THEME_CYCLE: readonly ThemeMode[] = ['light', 'dark', 'system']
+/** Theme cycles dark -> light -> system. Dark first because it is the default. */
+const THEME_CYCLE: readonly ThemeMode[] = ['dark', 'light', 'system']
 const THEME_ICON: Record<ThemeMode, IconName> = { light: 'sun', dark: 'moon', system: 'palette' }
 const THEME_LABEL: Record<ThemeMode, string> = { light: '浅色', dark: '深色', system: '跟随系统' }
 
@@ -156,6 +156,9 @@ const SHELL_STYLES = `
 .sw-shell__search-input:focus-visible { outline: none; }
 
 .sw-shell__content { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; padding: var(--space-5); }
+/* The animated page wrapper. A full min-height keeps a short page from collapsing
+   the scroll container while the entrance animation is running. */
+.sw-shell__page { display: flex; flex-direction: column; gap: var(--space-4); min-height: 100%; }
 
 /* ---- bottom action bar ---- */
 .sw-shell__bottombar {
@@ -197,7 +200,7 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
   const location = useLocation()
   const navigate = useNavigate()
 
-  const theme = useAppStore((state) => state.settings?.theme ?? 'light')
+  const theme = useAppStore((state) => state.settings?.theme ?? 'dark')
   const updateSettings = useAppStore((state) => state.updateSettings)
   const openCreateTransaction = useUiStore((state) => state.openCreateTransaction)
   const { run } = useAction()
@@ -312,7 +315,20 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
           </button>
         </header>
 
-        <main className="sw-shell__content">{children}</main>
+        {/*
+          Page transition.
+
+          Keyed by pathname so React remounts the wrapper on a route change and the
+          entrance animation replays. Without the key, navigating between two pages
+          that both render `<main>` would reuse the same element and the animation
+          would only ever run once — on first load, which is the one time it does
+          not matter.
+        */}
+        <main className="sw-shell__content">
+          <div key={location.pathname} className="sw-shell__page anim-rise">
+            {children}
+          </div>
+        </main>
 
         <div className="sw-shell__bottombar">
           <button type="button" className="btn btn-secondary" onClick={() => navigate('/import')}>
