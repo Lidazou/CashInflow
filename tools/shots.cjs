@@ -150,7 +150,7 @@ const HELPERS = `
      *  toggle, the chart mounts the canvas. */
     const probe = want === 'donut'
       ? () => document.querySelector('.sw-dash__mode')
-      : () => document.querySelector('.kline__canvas');
+      : () => document.querySelector('.cfc__canvas');
 
     if ((await window.api.settingsGet()).dashboardViewMode !== want) button.click();
 
@@ -228,27 +228,27 @@ const STEPS = [
     settle: 1800,
     body: `async () => {
       ${HELPERS}
-      const pad = (n) => String(n).padStart(2, '0');
-      const iso = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-
-      // Reset the window to 最近 30 天 before shooting. A range left over from an
-      // experiment ("a future month with nothing in it") made an earlier run
-      // produce a screenshot of an empty ring, which is not what this image is for.
-      const to = new Date();
-      const from = new Date(to.getFullYear(), to.getMonth(), to.getDate() - 29);
-      await window.api.settingsUpdate({
-        dashboardRange: { from: iso(from), to: iso(to), label: null, budgetAmount: null }
-      });
       await prepareDashboard({ view: 'donut', period: '自定义区间' });
-      await sleep(900);
 
-      const summary = document.querySelector('.sw-dash__range-summary');
-      if (summary && summary.getAttribute('aria-expanded') !== 'true') {
-        summary.click();
-        await sleep(700);
-      }
+      /*
+        Pick the range through the app's OWN preset button.
+
+        The obvious approach — write the range with the settings API — leaves the
+        renderer's store holding the old value, so the page keeps rendering the range it
+        already loaded. Adding a reload to fix that tears down the CDP session before
+        Runtime.evaluate can even return, which surfaces as an evaluate timeout rather
+        than as a navigation error and is misleading to debug.
+
+        Clicking 最近 30 天 goes through the same store action the toggle uses, so the
+        page and the database agree with no reload and no session churn.
+      */
+      const preset = byText('最近 30 天', '.sw-dash__quick .btn');
+      if (!preset) throw new Error('最近 30 天 preset missing');
+      preset.click();
+      await sleep(1800);
+
       await scrollTop();
-      return 'custom range: ' + (summary?.innerText.replace(/\\n/g, ' ') ?? '');
+      return 'custom range: ' + (document.querySelector('.sw-dash__range-summary')?.innerText.replace(/\\n/g, ' ') ?? '');
     }`
   },
   {
@@ -302,15 +302,15 @@ const STEPS = [
       await sleep(2000);
       // Scroll to the settlement-cycle block: it is the setting that changes what
       // every other screen means, so it is the one worth showing.
-      const heading = Array.from(document.querySelectorAll('h2, h3, label, p, span'))
-        .find((el) => el.textContent.trim() === '结算周期');
-      const block = heading?.closest('section, .card, div');
-      if (block) {
-        block.scrollIntoView({ block: 'center' });
-        await sleep(900);
-        return 'settings @ 结算周期';
-      }
-      return 'settings (结算周期 block not found)';
+      //
+      // Anchored on the section's own id. Matching the heading TEXT broke as soon as
+      // the heading gained an icon wrapper, and a selector that depends on wording
+      // breaks again the next time the wording changes.
+      const block = document.querySelector('#set-cycle-title')?.closest('section');
+      if (!block) return 'settings (cycle section not found)';
+      block.scrollIntoView({ block: 'center' });
+      await sleep(900);
+      return 'settings @ 结算周期';
     }`
   },
   {
@@ -395,19 +395,56 @@ const STEPS = [
       ${HELPERS}
       await prepareDashboard({ view: 'kline', currency: 'CNY', theme: 'dark' });
 
-      // Hover a candle about two thirds across, which lands on a day with real
-      // transactions in the demo data, so the tooltip is populated in the shot.
-      const canvas = document.querySelector('.kline__canvas');
+      /*
+        Park the cursor ON a transaction marker rather than anywhere in the column.
+
+        The marker hairline is the feature the shot exists to show, and its hint only
+        appears when the pointer is within a few pixels of it — so the loop sweeps down
+        the column until a hint appears instead of guessing a height.
+      */
+      const canvas = document.querySelector('.cfc__canvas');
       if (canvas) {
         const rect = canvas.getBoundingClientRect();
-        const point = { clientX: rect.left + rect.width * 0.66, clientY: rect.top + rect.height * 0.44 };
-        for (const type of ['pointermove', 'mousemove']) {
-          canvas.dispatchEvent(new PointerEvent(type, { ...point, bubbles: true, pointerId: 1 }));
+        // A day with several transactions, so the candle carries several markers.
+        const x = rect.left + rect.width * 0.36;
+        for (let f = 0.12; f <= 0.7; f += 0.02) {
+          for (const type of ['pointermove', 'mousemove']) {
+            canvas.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: rect.top + rect.height * f, bubbles: true, pointerId: 1 }));
+          }
+          await sleep(70);
+          if (document.querySelector('.kl__hint')) break;
         }
-        await sleep(900);
+        await sleep(600);
       }
       await scrollTop();
-      return 'kline ' + (document.querySelector('.kline__ma-legend')?.innerText.replace(/\\s+/g, ' ') ?? '');
+      return 'kline ' + (document.querySelector('.kl__ma-readout')?.innerText.replace(/\\s+/g, ' ') ?? '') +
+        ' | ' + (document.querySelector('.kl__hint')?.innerText.replace(/\\s+/g, ' ').slice(0, 50) ?? 'no hint');
+    }`
+  },
+  {
+    name: 'kline-detail',
+    settle: 2200,
+    body: `async () => {
+      ${HELPERS}
+      // Click a candle to open the Daily Detail panel, then hover below the markers so
+      // the shot shows the panel without a hint card overlapping it.
+      const canvas = document.querySelector('.cfc__canvas');
+      if (!canvas) throw new Error('chart canvas missing');
+      const rect = canvas.getBoundingClientRect();
+      const x = rect.left + rect.width * 0.36;
+      const y = rect.top + rect.height * 0.95;
+
+      for (const type of ['pointermove', 'mousemove']) {
+        canvas.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, pointerId: 1 }));
+      }
+      await sleep(300);
+      for (const type of ['pointerdown', 'pointerup']) {
+        canvas.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, pointerId: 1, button: 0, buttons: type === 'pointerdown' ? 1 : 0 }));
+      }
+      await sleep(1200);
+      await scrollTop();
+      return 'daily detail: ' + (document.querySelector('.kl__detail-head')?.innerText.replace(/\\s+/g, ' ') ?? 'not open') +
+        ' rows=' + document.querySelectorAll('.kl__detail-row').length;
     }`
   }
 ]
@@ -483,7 +520,30 @@ async function main() {
       // capture surface exceed the real window and the capture then times out.
       if (!shared) await session.call('Page.bringToFront')
 
-      const note = await session.evaluate(`(${step.body})()`)
+      /**
+       * Run the step's setup, tolerating a reload.
+       *
+       * A step is allowed to call `location.reload()` — the custom-range step does, so
+       * that bootstrap reads the settings it just wrote — and a reload tears down the
+       * CDP session mid-evaluation. That surfaced as
+       * "Inspected target navigated or closed", which looked like a broken page rather
+       * than a reconnect problem. So the evaluate is retried once on a fresh session
+       * after a short settle, which is all a reload needs.
+       */
+      let note = null
+      try {
+        note = await session.evaluate(`(${step.body})()`)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (!/navigated or closed|Session closed|Target closed/i.test(message)) throw error
+        if (shared) throw new Error(`${step.name} reloaded the page, which --persistent cannot survive`)
+        session.ws.close()
+        await sleep(2500)
+        session = await connect()
+        await session.call('Page.bringToFront')
+        note = await session.evaluate(`(${step.body})()`)
+      }
+
       await sleep(step.settle)
 
       /**
