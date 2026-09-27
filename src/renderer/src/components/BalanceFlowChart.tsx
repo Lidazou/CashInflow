@@ -213,6 +213,23 @@ function granularityForSpan(days: number): KlineGranularity {
 /* -------------------------------------------------------------------------- */
 
 /**
+ * Cap on the divider ticks drawn inside one candle.
+ *
+ * Beyond a dozen separators they are closer together than they are thick at any
+ * realistic candle size, so they merge into a solid block and communicate "many"
+ * no better than twelve do. The tooltip carries the exact count.
+ */
+const MAX_DIVIDER_TICKS = 12
+
+/**
+ * Minimum candle-body height, in px, at which divider ticks are drawn at all.
+ *
+ * Below this the whole body is about as tall as the separators are thick, so the
+ * candle would render as a striped rectangle instead of a candle with divisions.
+ */
+const MIN_TICK_BODY_HEIGHT = 14
+
+/**
  * Resolve the theme's market colours from the live CSS custom properties.
  *
  * Read at draw time rather than hard-coded, so the light theme's red-up override
@@ -227,6 +244,7 @@ function readMarketColors(element: HTMLElement): {
   grid: string
   axis: string
   crosshair: string
+  background: string
   ma: string[]
 } {
   const style = getComputedStyle(element)
@@ -239,6 +257,10 @@ function readMarketColors(element: HTMLElement): {
     grid: get('--market-grid', '#1A1A1E'),
     axis: get('--market-axis', '#6E6E77'),
     crosshair: get('--market-crosshair', '#8A8A93'),
+    // Used for the divider ticks, which are drawn as gaps in the candle body. The
+    // chart's own surface, so a separator reads in both themes without a second
+    // colour needing to be defined for it.
+    background: get('--bg-surface', '#121214'),
     ma: [
       get('--market-ma-1', '#F0B90B'),
       get('--market-ma-2', '#4E9CF5'),
@@ -605,6 +627,43 @@ export function BalanceFlowChart({
       const bodyHeight = Math.max(2, Math.abs(yClose - yOpen))
       ctx.fillStyle = color
       ctx.fillRect(x - candleWidth / 2, top, candleWidth, bodyHeight)
+
+      /*
+        DIVIDER TICKS — one segment per transaction.
+
+        A day with five small purchases and a day with one large one can move the
+        balance by the same amount, and the candle body alone cannot tell them apart.
+        Splitting the body into `transactionCount` equal segments draws that
+        difference directly on the bar: the tally of separators IS the tally of
+        transactions, so "how busy was that day" is readable without hovering.
+
+        Segments rather than positions along a time axis, because a transaction's
+        exact time within its day is usually absent (bank exports carry a date and
+        often nothing else), and placing ticks at invented times would be a
+        measurement the data does not support. Equal segments claim only what is
+        known: how many.
+
+        Skipped below 4px of body: the separators would be closer together than they
+        are thick and would read as a solid block. Past 12 segments the same happens
+        at any size, so the count is capped and the tooltip carries the exact number.
+      */
+      const ticks = Math.min(bucket.transactionCount, MAX_DIVIDER_TICKS)
+      if (ticks > 1 && bodyHeight >= MIN_TICK_BODY_HEIGHT) {
+        ctx.save()
+        // The separator has to read against the body it cuts, so it is drawn in the
+        // chart's own background rather than in white or black — that keeps it
+        // correct in both themes without a second colour token.
+        ctx.strokeStyle = colors.background
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        for (let t = 1; t < ticks; t += 1) {
+          const segmentY = Math.round(top + (bodyHeight * t) / ticks) + 0.5
+          ctx.moveTo(x - candleWidth / 2, segmentY)
+          ctx.lineTo(x + candleWidth / 2, segmentY)
+        }
+        ctx.stroke()
+        ctx.restore()
+      }
     }
 
     /* --- flow bars: income above the centre, expense below --- */

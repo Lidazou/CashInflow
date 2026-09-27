@@ -1,6 +1,6 @@
 {
   "name": "cashinflow",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "CashInflow — a local-first multi-currency personal finance manager for Windows. Electron + React + SQLite.",
   "main": "./out/main/index.js",
   "author": "CashInflow",
