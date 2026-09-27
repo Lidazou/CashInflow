@@ -8,7 +8,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white">
   <img alt="Release" src="https://img.shields.io/github/v/release/Lidazou/CashInflow?color=16A34A&label=release">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-460%20passing-16A34A">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-504%20passing-16A34A">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white">
 </p>
@@ -26,6 +26,25 @@
 **默认深色**，浅色主题保留。
 
 它和普通记账 App 的区别在6个地方。
+
+### 想先看看它长什么样？设置里有一套模拟数据
+
+![模拟数据](docs/images/v170-sample-dashboard.png)
+
+设置 → **模拟数据** → 「查看模拟数据」，就会打开一个**虚构留学生的两年账本**：
+每月 5 号家里打 1 万元生活费（**放假月份没有**，只有父母不定期的小额转账）、
+房租固定 3200、ChatGPT Plus / Netflix / B站大会员 / 网易云 / 加速器等订阅、
+吃饭交通教育支出、换汇、借钱还钱、生日和春节礼金，以及几个月里超过 2000 元的大额支出。
+
+**它是一个独立的数据库文件**（`demo/spendwise.db`），和你自己的账本互不影响：
+
+- 打开模拟数据时会**关闭你自己的账本**，返回时再打开 —— 全程只有一个数据库连接，
+  所以模拟数据不可能写进你的记录，你在模拟账本里的任何操作也不会碰到你的数据；
+- **每次启动都从你自己的账本开始**，模拟模式不会被记住 ——
+  一个会自己打开别人账本的记账软件不值得信任；
+- 模拟数据是**现场生成**的（不是固定的几百行 fixture），可以随时「重新生成」；
+- 打开模拟数据时，**应用顶部有横幅、每张图表右上角有「模拟数据」标记**，
+  两个都不能关掉 —— 一个不像自己的数字，必须一眼看得出来不是自己的。
 
 ---
 
@@ -623,8 +642,8 @@ Cash      +500.00    转账腿
 
 | 文件 | 说明 |
 |---|---|
-| `CashInflow-1.6.0-x64-setup.exe` | **安装版**。创建开始菜单与桌面快捷方式，并注册卸载项 |
-| `CashInflow-1.6.0-x64-portable.exe` | **免安装单文件版**。直接双击运行，不写注册表、不建快捷方式 |
+| `CashInflow-1.7.0-x64-setup.exe` | **安装版**。创建开始菜单与桌面快捷方式，并注册卸载项 |
+| `CashInflow-1.7.0-x64-portable.exe` | **免安装单文件版**。直接双击运行，不写注册表、不建快捷方式 |
 | `SHA256SUMS.txt` | 上面两个文件的 SHA-256 校验和 |
 
 两个版本功能完全相同，读写同一个数据库。
@@ -739,7 +758,7 @@ powershell -File tools/make-diagram.ps1
 npm test
 ```
 
-**460 个用例，跑真实 SQLite 文件，不用 mock。**
+**504 个用例，跑真实 SQLite 文件，不用 mock。**
 
 | 测试文件 | 覆盖内容 |
 |---|---|

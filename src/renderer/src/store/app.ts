@@ -4,7 +4,9 @@ import type {
   AppSettings,
   DashboardPeriodMode,
   DashboardRange,
-  DashboardViewMode
+  DashboardViewMode,
+  LedgerMode,
+  LedgerStatus
 } from '@shared/types'
 import { DEFAULT_CURRENCY } from '@shared/lib/money'
 import { useRateStore } from './rates'
@@ -48,8 +50,20 @@ interface AppState {
   activeMonth: string
   activeAccountId: number | null
 
+  /**
+   * Which ledger the app is showing (v1.7.0): the user's own, or the generated sample.
+   *
+   * Null until `bootstrap` resolves. Every surface that must announce the mode reads this
+   * rather than asking the main process again, so the banner and the chart badges can
+   * never disagree with each other.
+   */
+  ledger: LedgerStatus | null
+
   bootstrap: () => Promise<void>
   updateSettings: (patch: Partial<AppSettings>) => Promise<void>
+  /** Move to the other ledger. Resolves to the new status. */
+  switchLedger: (mode: LedgerMode) => Promise<LedgerStatus>
+  regenerateSample: () => Promise<LedgerStatus>
   refreshData: () => void
   pushToast: (toast: Omit<Toast, 'id'>) => void
   dismissToast: (id: number) => void
@@ -73,6 +87,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   toasts: [],
   activeMonth: currentMonthKey(),
   activeAccountId: null,
+  ledger: null,
 
   /**
    * Load settings and app metadata.
@@ -82,8 +97,12 @@ export const useAppStore = create<AppState>((set, get) => ({
    */
   bootstrap: async () => {
     try {
-      const [settings, info] = await Promise.all([window.api.settingsGet(), window.api.appInfo()])
-      set({ settings, info, ready: true, bootError: null })
+      const [settings, info, ledger] = await Promise.all([
+        window.api.settingsGet(),
+        window.api.appInfo(),
+        window.api.ledgerStatus()
+      ])
+      set({ settings, info, ledger, ready: true, bootError: null })
 
       // Seed the display currency before any component reads it, so the first
       // render formats figures in the user's chosen currency rather than
@@ -98,6 +117,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       // is intentionally never called because the store lives for the lifetime
       // of the window.
       window.api.onDataChanged(() => get().refreshData())
+
+      /*
+        Ledger switches are a DIFFERENT KIND of change (v1.7.0).
+
+        A page holding "September 2026" from the user's own ledger must not simply refetch
+        on top of that state when the sample comes on screen: the sample may have no
+        September, and the figures underneath would then belong to a database that is no
+        longer open. So the store adopts the new status and bumps `dataVersion`, which every
+        page keys its queries on — the same lever a data change uses, plus the mode itself.
+      */
+      window.api.onLedgerChanged((status) => {
+        set((state) => ({ ledger: status ?? state.ledger, dataVersion: state.dataVersion + 1 }))
+      })
     } catch (error) {
       set({
         ready: true,
@@ -128,6 +160,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (updated.displayCurrency) {
       useRateStore.getState().setDisplayCurrency(updated.displayCurrency)
     }
+  },
+
+  /**
+   * Move to the other ledger (v1.7.0).
+   *
+   * The main process does the switching; this adopts the resulting status and bumps
+   * `dataVersion` so every open page drops what it holds. The event subscription above
+   * does the same thing for a switch initiated anywhere else, so the two paths agree.
+   */
+  switchLedger: async (mode) => {
+    const status = await window.api.ledgerSwitch(mode)
+    set((state) => ({ ledger: status, dataVersion: state.dataVersion + 1 }))
+    /*
+      Rates are stored per ledger, so the currency bar and every converted figure are
+      looking at a table that belongs to the database we just left. Reloading here is what
+      stops the sample from opening with "无汇率" on rows that convert perfectly well.
+    */
+    void useRateStore.getState().load()
+    return status
+  },
+
+  regenerateSample: async () => {
+    const status = await window.api.ledgerRegenerateSample()
+    set((state) => ({ ledger: status, dataVersion: state.dataVersion + 1 }))
+    void useRateStore.getState().load()
+    return status
   },
 
   refreshData: () => set((state) => ({ dataVersion: state.dataVersion + 1 })),

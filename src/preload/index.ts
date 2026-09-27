@@ -177,8 +177,9 @@ const api = {
   recurringConfirm: (ruleId: number, date: string) => invoke(IPC_CHANNELS.recurringConfirm, ruleId, date),
 
   // --- demo data ---------------------------------------------------------
-  demoSeed: (monthKey?: string) => invoke(IPC_CHANNELS.demoSeed, monthKey),
-  demoClear: () => invoke(IPC_CHANNELS.demoClear),
+  ledgerStatus: () => invoke(IPC_CHANNELS.ledgerStatus),
+  ledgerSwitch: (mode: unknown) => invoke(IPC_CHANNELS.ledgerSwitch, mode),
+  ledgerRegenerateSample: () => invoke(IPC_CHANNELS.ledgerRegenerateSample),
 
   /**
    * Subscribe to data-change notifications.
@@ -197,6 +198,24 @@ const api = {
     ipcRenderer.on(IPC_CHANNELS.eventDataChanged, listener)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.eventDataChanged, listener)
+    }
+  },
+
+  /**
+   * Subscribe to ledger changes (v1.7.0).
+   *
+   * Separate from `onDataChanged` on purpose: a ledger change means the pages must DROP
+   * what they are holding, because it describes a different database. Treating it as an
+   * ordinary refresh would leave a month the sample does not cover on screen, showing the
+   * user's figures under the sample's name.
+   */
+  onLedgerChanged: (callback: (status: unknown) => void): (() => void) => {
+    const listener = (_event: unknown, status: unknown): void => {
+      callback(status ?? null)
+    }
+    ipcRenderer.on(IPC_CHANNELS.eventLedgerChanged, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.eventLedgerChanged, listener)
     }
   }
 }

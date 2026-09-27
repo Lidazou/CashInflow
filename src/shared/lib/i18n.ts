@@ -358,6 +358,25 @@ export const T = {
   txpIncomingCategory: '分类',
   txpIncomingClear: '清除筛选',
 
+  // Sample ledger (v1.7.0)
+  sampleBadge: '模拟数据',
+  sampleBadgeHint: '这些数字来自模拟的留学生账本，不是你自己的记录。',
+  sampleBannerTitle: '正在查看模拟数据',
+  sampleBannerBody:
+    '这是一个虚构留学生的两年账本，用来演示各个图表。你自己的账本没有被打开，也没有被修改。',
+  sampleBackToReal: '返回我的账本',
+  sampleBackDone: '已返回你自己的账本。',
+  sampleEnter: '查看模拟数据',
+  sampleEnterHint: '打开一个独立的模拟账本（不会改动你自己的数据）',
+  sampleRegenerate: '重新生成模拟数据',
+  sampleRegenerated: '模拟数据已重新生成。',
+  sampleLoadedAt: '模拟数据生成于 {time}',
+  sampleTitle: '模拟数据（示例账本）',
+  sampleBody:
+    '模拟账本存在一个**独立的数据库文件**里。打开模拟数据时会关闭你自己的账本，返回时再打开 —— 全程只有一个数据库连接，所以模拟数据不可能写进你的记录。',
+  sampleConfirmRegenerate: '重新生成模拟数据？模拟账本会被删除重建，你自己的账本不受影响。',
+  sampleGoNow: '现在去看',
+
   // Empty and error
   noData: '暂无数据',
   failedToLoad: '加载失败',

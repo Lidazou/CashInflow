@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { DonutChart, HorizontalBarChart, LineChart } from '@renderer/components/charts'
 import { categoryLabel } from '@shared/lib/i18n'
 import { Icon, iconNameOr } from '@renderer/components/Icon'
+import { SampleBadge } from '@renderer/components/SampleData'
 import { useAsync } from '@renderer/hooks/useData'
 import { useDisplaySettings } from '@renderer/store/app'
 import { useUiStore } from '@renderer/store/ui'
@@ -345,6 +346,9 @@ export default function StatisticsPage(): React.JSX.Element {
             {hasData ? (
               <div className="stp__charts">
                 <section className="card stp__chartCard" aria-label="支出趋势">
+          <div className="chart-corner">
+            <SampleBadge />
+          </div>
                   <div className="stp__chartHead">
                     <h2 className="card-title">支出趋势</h2>
                     <span className="stp__caption">按{granularityLabel(granularity)}汇总的支出</span>
@@ -358,6 +362,9 @@ export default function StatisticsPage(): React.JSX.Element {
                 </section>
 
                 <section className="card stp__chartCard" aria-label="分类构成">
+          <div className="chart-corner">
+            <SampleBadge />
+          </div>
                   <div className="stp__chartHead">
                     <h2 className="card-title">分类构成</h2>
                     <span className="stp__caption">

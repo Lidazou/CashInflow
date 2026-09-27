@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { Icon, iconNameOr } from '@renderer/components/Icon'
+import { SampleBadge } from '@renderer/components/SampleData'
 import type { IconName } from '@renderer/components/Icon'
 import { Donut3D } from '@renderer/components/Donut3D'
 import type { Donut3DSegment } from '@renderer/components/Donut3D'
@@ -78,7 +79,8 @@ import type {
 export default function DashboardPage(): JSX.Element {
   const activeMonth = useAppStore((state) => state.activeMonth)
   const setActiveMonth = useAppStore((state) => state.setActiveMonth)
-  const refreshData = useAppStore((state) => state.refreshData)
+  const switchLedger = useAppStore((state) => state.switchLedger)
+  const pushToast = useAppStore((state) => state.pushToast)
   const updateSettings = useAppStore((state) => state.updateSettings)
   const { dateFormat, displayCurrency, cycleStartDay, dashboardPeriodMode, dashboardRange, dashboardViewMode } =
     useDisplaySettings()
@@ -265,11 +267,18 @@ export default function DashboardPage(): JSX.Element {
     setEditorOpen(false)
   }
 
-  const seedDemoData = async (): Promise<void> => {
-    const result = await run(() => window.api.demoSeed(activeMonth), { successMessage: '示例数据已加载。' })
-    // Refresh only after a confirmed write, so a failed seed cannot leave the
-    // dashboard showing a half-populated period.
-    if (result) refreshData()
+  /**
+   * Open the sample ledger from the empty-dashboard panel (v1.7.0).
+   *
+   * Was "load sample data here", which only worked on an empty ledger and put sample rows
+   * in the user's own file. Now it opens the separate sample database, so an empty
+   * dashboard can be explored without anything being written.
+   */
+  const openSampleLedger = async (): Promise<void> => {
+    const status = await run(() => switchLedger('sample'), { successMessage: T.sampleBannerTitle })
+    if (status) {
+      pushToast({ tone: 'info', message: T.sampleBannerBody })
+    }
   }
 
   if (!summary) {
@@ -352,12 +361,13 @@ export default function DashboardPage(): JSX.Element {
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => void seedDemoData()}
+              onClick={() => void openSampleLedger()}
               disabled={pending}
               aria-busy={pending}
+              title={T.sampleEnterHint}
             >
               <Icon name="database" size={16} />
-              {pending ? '加载示例数据…' : '用示例数据体验'}
+              {pending ? T.sampleEnter : '用示例数据体验'}
             </button>
           </div>
           <p className="muted sw-dash__welcome-note">
@@ -473,6 +483,9 @@ export default function DashboardPage(): JSX.Element {
               </p>
             )}
             <div className="sw-dash__donut">
+              <div className="chart-corner">
+                <SampleBadge />
+              </div>
               <Donut3D
                 segments={segments}
                 size={340}
@@ -1441,3 +1454,4 @@ const DASHBOARD_STYLES = `
 .sw-dash__budget.is-over .sw-dash__budget-value { color: var(--expense); }
 .sw-dash__budget-of { font-size: var(--text-xs); }
 `
+

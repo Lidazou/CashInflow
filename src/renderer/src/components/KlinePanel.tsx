@@ -5,6 +5,7 @@ import { CashflowChart } from '@renderer/components/CashflowChart'
 import type { ActivityZoomRequest, ChartFrame, CrosshairState } from '@renderer/components/CashflowChart'
 import { Icon } from '@renderer/components/Icon'
 import { Money } from '@renderer/components/Money'
+import { SampleBadge } from '@renderer/components/SampleData'
 import { useUiStore } from '@renderer/store/ui'
 import { addDays, formatDate, today } from '@shared/lib/dates'
 import { instantOf } from '@shared/lib/chart-time'
@@ -386,6 +387,10 @@ export function KlinePanel({
 
       {/* ---------------- header: the quote block ---------------- */}
       <section className="kl__quote" aria-live="polite">
+        {/* Top-right of the chart card: see SampleData.tsx for why this is not dismissible. */}
+        <div className="chart-corner">
+          <SampleBadge />
+        </div>
         <div className="kl__quote-main">
           <p className="kl__quote-label">
             {isCurrent ? '当前余额' : `${formatDate(focus?.date ?? '', 'YYYY-MM-DD')} · 收盘`}
@@ -1020,6 +1025,7 @@ const KLINE_PANEL_STYLES = `
 
 /* ---- quote block ---- */
 .kl__quote {
+  position: relative;
   display: flex; align-items: flex-start; gap: var(--space-6); flex-wrap: wrap;
   padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-subtle);
 }

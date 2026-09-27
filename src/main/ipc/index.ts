@@ -11,6 +11,7 @@ import {
   type DatabaseHandle
 } from '@main/database/connection'
 import { assertId, Services } from '@main/services'
+import type { LedgerManager } from '@main/services/ledger'
 import { readXlsxRows, writeCsvFile, writeTransactionsXlsx, xlsxFileName } from '@main/services/export'
 import { IPC_CHANNELS } from '@shared/types/ipc-contract'
 import type {
@@ -24,6 +25,8 @@ import type {
   ImportPresetId,
   IpcDateRange,
   KlineGranularity,
+  LedgerMode,
+  LedgerStatus,
   OcrResult,
   OcrStatus,
   RecurringRuleInput,
@@ -67,12 +70,30 @@ export interface IpcContext {
   /** Always read services through here: a restore replaces them. */
   getServices: () => Services
   getDbHandle: () => DatabaseHandle
-  dataDir: string
-  databasePath: string
+  /**
+   * The active ledger's directory and file (v1.7.0).
+   *
+   * FUNCTIONS, not strings: a ledger switch replaces both, and handlers that report,
+   * reveal or back up "the database" must mean the one currently on screen. A snapshot of
+   * the paths taken at registration time is exactly how a backup requested in sample mode
+   * would quietly write the sample into the user's own data folder.
+   */
+  dataDir: () => string
+  databasePath: () => string
   /** Rebuild services over a newly opened database (used after a restore). */
   reopen: () => void
   /** Ask the renderer to refetch after a mutation. */
   notifyDataChanged: (reason: string) => void
+  /**
+   * The manager that owns WHICH database is open (v1.7.0).
+   *
+   * Injected rather than owned here because the switch replaces the services the rest of
+   * this file resolves through `getServices()`, and only the process entry point is in a
+   * position to swap that safely.
+   */
+  getLedger: () => LedgerManager
+  /** Tell the renderer the ledger changed, so it can drop every cached page. */
+  notifyLedgerChanged: (status: LedgerStatus) => void
 }
 
 /**
@@ -107,7 +128,8 @@ function handle<TArgs extends unknown[], TResult>(
 }
 
 export function registerIpcHandlers(context: IpcContext): void {
-  const { dataDir, databasePath } = context
+  const dataDir = (): string => context.dataDir()
+  const databasePath = (): string => context.databasePath()
   /** Resolved fresh on every call so a post-restore rebuild is picked up. */
   const svc = (): Services => context.getServices()
 
@@ -124,8 +146,8 @@ export function registerIpcHandlers(context: IpcContext): void {
     v8Version: process.versions.v8,
     platform: process.platform,
     arch: process.arch,
-    userDataPath: dataDir,
-    databasePath: databasePath,
+    userDataPath: dataDir(),
+    databasePath: databasePath(),
     isPackaged: app.isPackaged
   }))
 
@@ -823,7 +845,7 @@ export function registerIpcHandlers(context: IpcContext): void {
 
     return {
       path: databasePath,
-      bytes: databaseFileSize(databasePath),
+      bytes: databaseFileSize(databasePath()),
       schemaVersion: db.pragma('user_version', { simple: true }) as number,
       journalMode: String(db.pragma('journal_mode', { simple: true })),
       foreignKeys: db.pragma('foreign_keys', { simple: true }) === 1,
@@ -836,7 +858,7 @@ export function registerIpcHandlers(context: IpcContext): void {
   })
 
   handle<void[], { opened: true }>(IPC_CHANNELS.databaseReveal, context, {}, () => {
-    shell.showItemInFolder(databasePath)
+    shell.showItemInFolder(databasePath())
     return { opened: true }
   })
 
@@ -906,20 +928,32 @@ export function registerIpcHandlers(context: IpcContext): void {
   )
 
   // -------------------------------------------------------------------------
-  // Demo data
+  // Ledger mode: the user's own database, or the sample one (v1.7.0)
   // -------------------------------------------------------------------------
 
-  handle<[string?], unknown>(IPC_CHANNELS.demoSeed, context, { mutates: true, reason: 'demo' }, (monthKey) => {
-    const key = monthKey ? sanitiseMonthKey(monthKey) : defaultDemoMonth()
-    const result = svc().demo.seed(key)
-    svc().settings.update({ demoDataLoaded: true })
-    return result
+  handle<void[], LedgerStatus>(IPC_CHANNELS.ledgerStatus, context, {}, () =>
+    context.getLedger().status()
+  )
+
+  /*
+    Switching ledgers.
+
+    Not marked `mutates`: it writes nothing to either database — it closes one file and
+    opens another. The guard that matters is in the manager: the ledger being left is
+    closed AFTER the new one is open, so a failure leaves the app where it was.
+  */
+  handle<[LedgerMode], LedgerStatus>(IPC_CHANNELS.ledgerSwitch, context, {}, (mode) => {
+    const target: LedgerMode = mode === 'sample' ? 'sample' : 'real'
+    const status = context.getLedger().switchTo(target)
+    /* Every open page is now looking at a different ledger. */
+    context.notifyLedgerChanged(status)
+    return status
   })
 
-  handle<void[], unknown>(IPC_CHANNELS.demoClear, context, { mutates: true, reason: 'demo' }, () => {
-    const result = svc().demo.clear()
-    svc().settings.update({ demoDataLoaded: false })
-    return result
+  handle<void[], LedgerStatus>(IPC_CHANNELS.ledgerRegenerateSample, context, {}, () => {
+    const status = context.getLedger().regenerateSample()
+    context.notifyLedgerChanged(status)
+    return status
   })
 }
 
@@ -1048,12 +1082,12 @@ function restoreFromBackup(
   }
 
   // --- 2. Snapshot the current database ------------------------------------
-  const snapshot = snapshotBeforeDestructiveChange(context.getDbHandle().db, context.dataDir, 'restore')
+  const snapshot = snapshotBeforeDestructiveChange(context.getDbHandle().db, context.dataDir(), 'restore')
 
   // --- 3. Close, swap, reopen ----------------------------------------------
   context.getDbHandle().close()
 
-  const target = context.databasePath
+  const target = context.databasePath()
   const staged = `${target}.restoring`
 
   try {

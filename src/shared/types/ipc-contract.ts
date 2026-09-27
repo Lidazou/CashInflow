@@ -46,6 +46,8 @@ import type {
   IpcDateRange,
   KlineGranularity,
   KlineSeries,
+  LedgerMode,
+  LedgerStatus,
   MultiCurrencyTotals,
   OcrResult,
   OcrStatus,
@@ -167,9 +169,10 @@ export const IPC_CHANNELS = {
   recurringDue: 'recurring:due',
   recurringConfirm: 'recurring:confirm',
 
-  // --- demo data ---------------------------------------------------------
-  demoSeed: 'demo:seed',
-  demoClear: 'demo:clear',
+  // --- ledger mode: the user's own database, or the sample one (v1.7.0) ---
+  ledgerStatus: 'ledger:status',
+  ledgerSwitch: 'ledger:switch',
+  ledgerRegenerateSample: 'ledger:regenerateSample',
 
   // --- receipt OCR (v1.5.2) ----------------------------------------------
   ocrStatus: 'ocr:status',
@@ -177,7 +180,9 @@ export const IPC_CHANNELS = {
   ocrRecognize: 'ocr:recognize',
 
   // --- events pushed from main to renderer ------------------------------
-  eventDataChanged: 'event:dataChanged'
+  eventDataChanged: 'event:dataChanged',
+  /** The app moved to the other ledger; every cached page is now stale (v1.7.0). */
+  eventLedgerChanged: 'event:ledgerChanged'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -349,8 +354,17 @@ export interface IpcContract {
   [IPC_CHANNELS.recurringDue]: { args: [asOf?: string]; result: Array<{ rule: RecurringRule; dueDate: string }> }
   [IPC_CHANNELS.recurringConfirm]: { args: [ruleId: number, date: string]; result: TransactionWithRefs }
 
-  [IPC_CHANNELS.demoSeed]: { args: [monthKey?: string]; result: { accounts: number; transactions: number } }
-  [IPC_CHANNELS.demoClear]: { args: []; result: { removedTransactions: number } }
+  /**
+   * Ledger mode (v1.7.0).
+   *
+   * `ledgerSwitch` MOVES THE APP to the sample database or back. It is a mode change
+   * rather than a write: the ledger being left is closed, and the one being entered is
+   * opened, so there is never a connection through which the user's own rows could be
+   * touched while the sample is on screen.
+   */
+  [IPC_CHANNELS.ledgerStatus]: { args: []; result: LedgerStatus }
+  [IPC_CHANNELS.ledgerSwitch]: { args: [mode: LedgerMode]; result: LedgerStatus }
+  [IPC_CHANNELS.ledgerRegenerateSample]: { args: []; result: LedgerStatus }
 
   // --- receipt OCR -------------------------------------------------------
   [IPC_CHANNELS.ocrStatus]: { args: []; result: OcrStatus }
@@ -511,11 +525,20 @@ export interface CashInflowApi {
   ocrRecognize: (filePath: string) => Promise<OcrResult>
 
   // --- demo data ---------------------------------------------------------
-  demoSeed: (monthKey?: string) => Promise<{ accounts: number; transactions: number }>
-  demoClear: () => Promise<{ removedTransactions: number }>
+  ledgerStatus: () => Promise<LedgerStatus>
+  ledgerSwitch: (mode: LedgerMode) => Promise<LedgerStatus>
+  ledgerRegenerateSample: () => Promise<LedgerStatus>
 
   /** Subscribe to main-process data-change notifications. Returns an unsubscribe fn. */
   onDataChanged: (callback: (payload: { reason: string }) => void) => () => void
+  /**
+   * Subscribe to ledger switches (v1.7.0).
+   *
+   * Separate from `onDataChanged` because the meaning is stronger: a data change means
+   * "refetch what you are showing", a ledger change means "what you are showing belongs
+   * to a database that is no longer open".
+   */
+  onLedgerChanged: (callback: (status: LedgerStatus) => void) => () => void
 }
 
 /**
@@ -537,7 +560,10 @@ type ColonToCamel<S extends string> = S extends `${infer Head}:${infer Tail}`
   ? `${Head}${Capitalize<CamelCase<Tail>>}`
   : CamelCase<S>
 
-type InvocableChannels = Exclude<(typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS], typeof IPC_CHANNELS.eventDataChanged>
+type InvocableChannels = Exclude<
+  (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS],
+  typeof IPC_CHANNELS.eventDataChanged | typeof IPC_CHANNELS.eventLedgerChanged
+>
 type ExpectedApiMethods = ColonToCamel<InvocableChannels>
 
 /**

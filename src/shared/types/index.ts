@@ -1169,6 +1169,32 @@ export interface DatabaseInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Ledger mode: the user's own database, or the sample one (v1.7.0)
+// ---------------------------------------------------------------------------
+
+/**
+ * Which ledger the app is showing.
+ *
+ * `real` is the user's own file and is what the app ALWAYS opens with; `sample` is a
+ * separate database generated for exploring the app. The two are never open at the same
+ * time, so nothing the user does while looking at the sample can reach their own money.
+ */
+export type LedgerMode = 'real' | 'sample'
+
+export interface LedgerStatus {
+  mode: LedgerMode
+  /** Always true in this build; kept so the UI can say so rather than assume. */
+  sampleAvailable: boolean
+  /** True once the sample database exists on disk. */
+  sampleLoaded: boolean
+  /** Absolute path of the user's own ledger, for the reassurance line in Settings. */
+  realPath: string
+  samplePath: string
+  /** When the sample was generated, ISO timestamp, or null if never. */
+  sampleGeneratedAt: string | null
+}
+
+// ---------------------------------------------------------------------------
 // IPC envelope
 // ---------------------------------------------------------------------------
 

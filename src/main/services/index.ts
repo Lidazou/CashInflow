@@ -6,7 +6,6 @@ import { StatisticsService } from './statistics'
 import { KlineService } from './kline'
 import { ImportService } from './import'
 import { BudgetsService, RecurringService, SettingsService, SubscriptionsService } from './settings'
-import { DemoDataService } from './demo'
 import { ExchangeRateService } from './exchange'
 import { OcrService } from './ocr'
 import { AppError } from '@main/database/errors'
@@ -31,7 +30,6 @@ export class Services {
   readonly budgets: BudgetsService
   readonly subscriptions: SubscriptionsService
   readonly recurring: RecurringService
-  readonly demo: DemoDataService
   readonly exchange: ExchangeRateService
   readonly ocr: OcrService
 
@@ -61,7 +59,6 @@ export class Services {
     this.budgets = new BudgetsService(db)
     this.subscriptions = new SubscriptionsService(db)
     this.recurring = new RecurringService(db)
-    this.demo = new DemoDataService(db)
 
     this.imports = new ImportService({
       db,

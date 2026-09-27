@@ -23,6 +23,7 @@ import {
   cycleStartDayLabel,
   dateFormatLabel,
   daysLabelZh,
+  fillTemplate,
   importPresetLabel,
   rateFreshnessLabel
 } from '@shared/lib/i18n'
@@ -273,6 +274,10 @@ export default function SettingsPage(): React.JSX.Element {
   const refreshData = useAppStore((state) => state.refreshData)
   const pushToast = useAppStore((state) => state.pushToast)
   const storeInfo = useAppStore((state) => state.info)
+  /* Ledger mode (v1.7.0): which database is open, and the two actions that move between them. */
+  const ledger = useAppStore((state) => state.ledger)
+  const switchLedger = useAppStore((state) => state.switchLedger)
+  const regenerateSample = useAppStore((state) => state.regenerateSample)
   const { run, pending } = useAction()
 
   const rateTable = useRateStore((state) => state.table)
@@ -635,42 +640,47 @@ export default function SettingsPage(): React.JSX.Element {
     if (result === null) setDataError('无法在资源管理器中打开数据库文件所在的位置。')
   }
 
-  async function handleDemoSeed(): Promise<void> {
+  /**
+   * Open the sample ledger (v1.7.0).
+   *
+   * Replaces the old "load sample data into this ledger" action. That design could only
+   * work on an empty ledger — it refused to mix sample rows into a real one — so it was
+   * unreachable for anyone who had actually used the app, and it left sample rows in the
+   * user's own file for anyone who had not. Switching to a separate database has neither
+   * problem: it works from any state, and the user's file is never written to.
+   */
+  async function handleOpenSample(): Promise<void> {
     setDataError(null)
     try {
-      const result = await window.api.demoSeed()
-      refreshData()
-      reloadDb()
-      reloadCategories()
+      const status = await switchLedger('sample')
       pushToast({
-        tone: 'success',
-        message: `示例数据已加载：${result.accounts} ${T.unitAccounts}、${result.transactions} ${T.unitTransactions}。`
+        tone: 'info',
+        message: T.sampleBannerTitle,
+        detail: status.sampleGeneratedAt ? fillTemplate(T.sampleLoadedAt, { time: status.sampleGeneratedAt.slice(0, 16).replace('T', ' ') }) : undefined
       })
     } catch (caught) {
-      // The backend refuses to mix demo rows into a real ledger. Its reason is
-      // shown verbatim instead of failing silently.
-      setDataError(caught instanceof Error ? caught.message : '示例数据加载失败。')
+      setDataError(caught instanceof Error ? caught.message : T.sampleEnter)
     }
   }
 
-  async function handleDemoClear(): Promise<void> {
+  async function handleBackToReal(): Promise<void> {
     setDataError(null)
-    const confirmed = window.confirm(
-      '要清除示例数据吗？只会删除由 CashInflow 创建的示例账户和示例交易，你自己记录的交易不会被动到。'
-    )
-    if (!confirmed) return
-
     try {
-      const result = await window.api.demoClear()
-      refreshData()
-      reloadDb()
-      reloadCategories()
-      pushToast({
-        tone: 'success',
-        message: `示例数据已清除（${result.removedTransactions} ${T.unitTransactions}）。`
-      })
+      await switchLedger('real')
+      pushToast({ tone: 'success', message: T.sampleBackDone })
     } catch (caught) {
-      setDataError(caught instanceof Error ? caught.message : '示例数据清除失败。')
+      setDataError(caught instanceof Error ? caught.message : T.sampleBackToReal)
+    }
+  }
+
+  async function handleRegenerateSample(): Promise<void> {
+    if (!window.confirm(T.sampleConfirmRegenerate)) return
+    setDataError(null)
+    try {
+      await regenerateSample()
+      pushToast({ tone: 'success', message: T.sampleRegenerated })
+    } catch (caught) {
+      setDataError(caught instanceof Error ? caught.message : T.sampleRegenerate)
     }
   }
 
@@ -1809,30 +1819,65 @@ export default function SettingsPage(): React.JSX.Element {
         <div className="set__sectionHead">
           <Icon name="inbox" size={18} />
           <h2 className="card-title" id="set-demo-title">
-            示例数据
+            {T.sampleTitle}
           </h2>
         </div>
 
         <p className="muted set__small">
-          用来体验功能的示例账户和示例交易。示例数据只能加进一本空账本——账本里已经有内容时，CashInflow
-          会直接拒绝，而不会把示例记录混进你的真实账目。清除示例数据时，只会删除由示例创建的记录，你自己记的交易不受影响。
+          {T.sampleBody}
         </p>
 
+        <dl className="set__infoGrid">
+          <div>
+            <dt>当前账本</dt>
+            <dd>{ledger?.mode === 'sample' ? T.sampleBadge : '我的账本'}</dd>
+          </div>
+          <div>
+            <dt>我的账本文件</dt>
+            <dd className="set__pathCell num">{ledger?.realPath ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>模拟账本文件</dt>
+            <dd className="set__pathCell num">
+              {ledger?.sampleLoaded ? ledger.samplePath : '尚未生成（第一次打开时创建）'}
+            </dd>
+          </div>
+          {ledger?.sampleGeneratedAt ? (
+            <div>
+              <dt>生成时间</dt>
+              <dd className="num">{ledger.sampleGeneratedAt.slice(0, 19).replace('T', ' ')}</dd>
+            </div>
+          ) : null}
+        </dl>
+
         <div className="set__actions">
-          <button type="button" className="btn btn-secondary" onClick={() => void handleDemoSeed()} disabled={pending}>
-            <Icon name="plus" size={16} />
-            加载示例数据
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => void handleDemoClear()} disabled={pending}>
-            <Icon name="trash" size={16} />
-            清除示例数据
+          {ledger?.mode === 'sample' ? (
+            <button type="button" className="btn btn-primary" onClick={() => void handleBackToReal()} disabled={pending}>
+              <Icon name="undo" size={16} />
+              {T.sampleBackToReal}
+            </button>
+          ) : (
+            <button type="button" className="btn btn-primary" onClick={() => void handleOpenSample()} disabled={pending}>
+              <Icon name="inbox" size={16} />
+              {T.sampleEnter}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void handleRegenerateSample()}
+            disabled={pending}
+            title={T.sampleConfirmRegenerate}
+          >
+            <Icon name="refresh" size={16} />
+            {T.sampleRegenerate}
           </button>
         </div>
 
         <p className="muted set__small">
-          {settings?.demoDataLoaded
-            ? '当前数据库里已经加载了示例数据。'
-            : '当前数据库里没有示例数据。'}
+          模拟账本是一个虚构留学生的两年生活：每月 5 号家里打 1 万元生活费（放假月份没有）、房租固定
+          3200 元、ChatGPT Plus / Netflix / B站大会员 / 网易云 / 加速器等订阅、吃饭交通教育支出、
+          换汇转账、借钱还钱、生日和春节礼金，以及几个月里超过 2000 元的大额支出。
         </p>
       </section>
 

@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog, Menu, shell } from 'electron'
 import { join } from 'node:path'
-import { openDatabase, type DatabaseHandle } from './database/connection'
+import type { DatabaseHandle } from './database/connection'
 import { Services } from './services'
+import { LedgerManager } from './services/ledger'
 import { registerIpcHandlers } from './ipc'
 import { IPC_CHANNELS } from '@shared/types/ipc-contract'
+import type { LedgerStatus } from '@shared/types'
 
 /**
  * Main process entry point.
@@ -39,8 +41,7 @@ app.setName('CashInflow')
 
 const isDev = !app.isPackaged
 
-let dbHandle: DatabaseHandle | null = null
-let services: Services | null = null
+let ledger: LedgerManager | null = null
 let mainWindow: BrowserWindow | null = null
 
 /**
@@ -62,21 +63,38 @@ function databasePath(): string {
   return join(dataDir(), 'spendwise.db')
 }
 
+/**
+ * The paths of the ledger that is ACTUALLY open.
+ *
+ * `dataDir()` above is the user's own folder; while the sample ledger is showing, the
+ * active file is `demo/spendwise.db`, and anything the user can point at — the info
+ * panel, "reveal in Explorer", a backup — has to mean that one. The manager knows which.
+ */
+function activeDataDir(): string {
+  return ledger ? ledger.currentDir() : dataDir()
+}
+
+function activeDatabasePath(): string {
+  return ledger ? ledger.currentPath() : databasePath()
+}
+
 function getServices(): Services {
-  if (!services) {
+  if (!ledger) {
     throw new Error('The database is not open. This indicates a startup failure.')
   }
-  return services
+  return ledger.servicesRef()
 }
 
 function getDbHandle(): DatabaseHandle {
-  if (!dbHandle) {
+  if (!ledger) {
     throw new Error('The database is not open. This indicates a startup failure.')
   }
-  return dbHandle
+  return ledger.handleRef()
 }
 
-/** Broadcast a data-change notification so open pages refetch. */
+/**
+ * Broadcast a data-change notification so open pages refetch.
+ */
 function notifyDataChanged(reason: string): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) {
@@ -86,17 +104,31 @@ function notifyDataChanged(reason: string): void {
 }
 
 /**
+ * Tell the renderer the app moved to the other ledger.
+ *
+ * Sent alongside a data-changed notification, because every cached page is now about a
+ * different database: the pages must drop what they hold, not merely refetch on top of it.
+ */
+function notifyLedgerChanged(status: LedgerStatus): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IPC_CHANNELS.eventLedgerChanged, status)
+    }
+  }
+}
+
+/**
  * Rebuild the services over a freshly opened database.
  * Used after a restore replaces the file on disk.
  */
 function reopenServices(): void {
-  try {
-    dbHandle?.close()
-  } catch {
-    /* the connection may already be closed by the caller */
-  }
-  dbHandle = openDatabase({ dataDir: dataDir() })
-  services = new Services(dbHandle.db)
+  /*
+    Delegates to the manager so a restore performed while the SAMPLE ledger is showing
+    reopens the sample, not the user's file. Reopening the wrong one would hand the app a
+    connection to a database it is not displaying — the one failure mode this whole
+    arrangement exists to prevent.
+  */
+  ledger?.reopenCurrent()
 }
 
 /**
@@ -245,9 +277,15 @@ if (!gotLock) {
   })
 
   app.whenReady().then(() => {
+    /*
+      ONE DATABASE AT A TIME.
+
+      `ledger` owns which file is open: the user's own `spendwise.db`, or the generated
+      `demo/spendwise.db`. The app always STARTS on the real ledger — the sample mode is
+      never persisted — so a launch can never open on somebody else's money.
+    */
     try {
-      dbHandle = openDatabase({ dataDir: dataDir() })
-      services = new Services(dbHandle.db)
+      ledger = new LedgerManager(dataDir())
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       // A failure here means the app cannot function at all; say so plainly
@@ -263,10 +301,16 @@ if (!gotLock) {
     registerIpcHandlers({
       getServices,
       getDbHandle,
-      dataDir: dataDir(),
-      databasePath: databasePath(),
+      /* Resolved per call: a ledger switch changes both. */
+      dataDir: activeDataDir,
+      databasePath: activeDatabasePath,
       reopen: reopenServices,
-      notifyDataChanged
+      notifyDataChanged,
+      getLedger: () => {
+        if (!ledger) throw new Error('The ledger manager is not open.')
+        return ledger
+      },
+      notifyLedgerChanged
     })
 
     buildMenu()
@@ -280,7 +324,7 @@ if (!gotLock) {
     // precondition. Fetching here means the first screen usually has real rates
     // by the time the user looks at it, and the renderer's own `ratesInfo` call
     // is then a cache hit rather than a network round trip.
-    void services?.ensureRates()
+    void ledger?.servicesRef().ensureRates()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
@@ -296,11 +340,11 @@ if (!gotLock) {
   // otherwise be fine, but one who copies it after a crash might not be.
   app.on('before-quit', () => {
     try {
-      dbHandle?.close()
+      /* Closes whichever ledger is open, real or sample. */
+      ledger?.close()
     } catch {
       /* nothing useful to do at shutdown */
     }
-    dbHandle = null
-    services = null
+    ledger = null
   })
 }

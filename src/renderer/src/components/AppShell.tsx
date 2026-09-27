@@ -3,6 +3,7 @@ import type { FormEvent, JSX, ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { Icon } from '@renderer/components/Icon'
+import { SampleBanner, SAMPLE_STYLES } from '@renderer/components/SampleData'
 import type { IconName } from '@renderer/components/Icon'
 import { useAction, useAsync } from '@renderer/hooks/useData'
 import { useAppStore } from '@renderer/store/app'
@@ -248,6 +249,7 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
   return (
     <div className={compact ? 'sw-shell sw-shell--compact' : 'sw-shell'}>
       <style>{SHELL_STYLES}</style>
+      <style>{SAMPLE_STYLES}</style>
 
       <aside className="sw-shell__sidebar">
         <div className="sw-shell__brand">
@@ -314,6 +316,15 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
             <Icon name={THEME_ICON[theme]} size={18} />
           </button>
         </header>
+
+        {/*
+          The sample-ledger banner (v1.7.0).
+
+          Above the page content and below the header, so it is inside the area the reader
+          is looking at rather than floating over it, and so it is present on EVERY page —
+          including the ones with no chart to put a badge on.
+        */}
+        <SampleBanner />
 
         {/*
           Page transition.
