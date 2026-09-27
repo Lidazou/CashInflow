@@ -107,9 +107,12 @@ export function KlinePanel({
     marker: CashflowTransactionMarker | null
   }>({ bucket: null, marker: null })
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [gotoDate, setGotoDate] = useState<string | null>(null)
+  const [gotoDate, setGotoDate] = useState<string | { from: string; to: string } | null>(null)
   const [resetToken, setResetToken] = useState(0)
   const [gotoNotice, setGotoNotice] = useState<string | null>(null)
+  const [customOpen, setCustomOpen] = useState(false)
+  const [customFrom, setCustomFrom] = useState(() => settings.customFrom ?? '')
+  const [customTo, setCustomTo] = useState(() => settings.customTo ?? '')
 
   const buckets = useMemo(
     () => (series ? bucketDaily(series.daily, settings.granularity) : []),
@@ -256,6 +259,43 @@ export function KlinePanel({
   )
 
   /**
+   * Apply a user-typed span.
+   *
+   * Reversed ends are refused rather than swapped: a swapped range would silently
+   * show a period the user did not ask for, and "why is my chart showing August when
+   * I typed September" is a worse outcome than a one-line message.
+   *
+   * A range that misses the recorded data entirely is reported AND the view is reset
+   * to everything, because leaving the chart parked on the previous window while
+   * saying "no data" reads as though the request was ignored.
+   */
+  const applyCustomRange = useCallback((): void => {
+    if (!customFrom || !customTo) {
+      setGotoNotice('请选择开始和结束日期。')
+      return
+    }
+    if (customFrom > customTo) {
+      setGotoNotice('开始日期不能晚于结束日期。')
+      return
+    }
+    if (buckets.length === 0) return
+
+    const first = buckets[0].date
+    const last = buckets[buckets.length - 1].date
+    onSettings({ rangeId: 'custom', customFrom, customTo })
+
+    if (customTo < first || customFrom > last) {
+      setGotoNotice(`这段时间没有记录（有数据的范围是 ${first} 至 ${last}），已显示全部区间。`)
+      setResetToken((token) => token + 1)
+      return
+    }
+
+    setGotoNotice(null)
+    setGotoDate({ from: customFrom, to: customTo })
+    setCustomOpen(false)
+  }, [customFrom, customTo, buckets, onSettings])
+
+  /**
    * Open a transaction in the app's existing detail drawer.
    *
    * Fetches the real row instead of constructing a look-alike from the marker: a
@@ -383,7 +423,43 @@ export function KlinePanel({
               {range.label}
             </button>
           ))}
+          <button
+            type="button"
+            className={`kl__range ${settings.rangeId === 'custom' ? 'is-active' : ''}`}
+            aria-expanded={customOpen}
+            onClick={() => setCustomOpen((open) => !open)}
+          >
+            自定义
+          </button>
         </div>
+
+        {customOpen ? (
+          <div className="kl__custom anim-pop">
+            <label>
+              <span className="muted">开始</span>
+              <input
+                type="date"
+                className="input"
+                value={customFrom}
+                max={customTo || undefined}
+                onChange={(event) => setCustomFrom(event.target.value)}
+              />
+            </label>
+            <label>
+              <span className="muted">结束</span>
+              <input
+                type="date"
+                className="input"
+                value={customTo}
+                min={customFrom || undefined}
+                onChange={(event) => setCustomTo(event.target.value)}
+              />
+            </label>
+            <button type="button" className="btn btn-primary btn-sm" onClick={applyCustomRange}>
+              应用
+            </button>
+          </div>
+        ) : null}
 
         <div className="kl__spacer" />
 
@@ -708,6 +784,11 @@ const KLINE_PANEL_STYLES = `
 .kl__range:hover { background-color: var(--bg-hover); color: var(--text-primary); }
 .kl__range.is-active { background-color: var(--accent-subtle); color: var(--accent-text); }
 .kl__spacer { flex: 1 1 auto; }
+/* The custom-range editor drops onto its own row so two date fields and a button do
+   not squeeze the period and range controls onto one cramped line. */
+.kl__custom { display: flex; align-items: flex-end; gap: var(--space-2); flex-wrap: wrap; flex-basis: 100%; }
+.kl__custom label { display: flex; flex-direction: column; gap: 2px; font-size: var(--text-2xs); }
+.kl__custom .input { width: 132px; height: 28px; font-size: var(--text-xs); }
 .kl__ma { position: relative; }
 .kl__ma-menu {
   position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 150px;

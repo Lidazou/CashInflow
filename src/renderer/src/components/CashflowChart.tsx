@@ -67,8 +67,8 @@ export interface CashflowChartProps {
   onHover?: (bucket: KlineBucket | null, marker: CashflowTransactionMarker | null) => void
   onClickBucket?: (bucket: KlineBucket) => void
   onClickMarker?: (marker: CashflowTransactionMarker) => void
-  /** Set by the caller to jump the view to a date; consumed once. */
-  gotoDate?: string | null
+  /** Set by the caller to jump the view to a date, or to an explicit span. */
+  gotoDate?: string | { from: string; to: string } | null
   onGotoConsumed?: () => void
   /** Bumping this resets the view to the full range. */
   resetToken?: number
@@ -463,11 +463,41 @@ export function CashflowChart({
     setView(null)
   }, [resetToken])
 
-  /* ---- external control: go to date ---- */
+  /* ---- external control: go to date, or to an explicit span ---- */
   useEffect(() => {
     if (!gotoDate || buckets.length === 0) return
-    const index = buckets.findIndex((bucket) => bucket.date >= gotoDate)
-    const target = index === -1 ? buckets.length - 1 : index
+
+    const from = typeof gotoDate === 'string' ? gotoDate : gotoDate.from
+    const to = typeof gotoDate === 'string' ? null : gotoDate.to
+
+    const startIndex = buckets.findIndex((bucket) => bucket.date >= from)
+
+    /*
+      An explicit span sets BOTH edges, so a 30-day custom range shows exactly those
+      30 days. Centring on the start instead would show a window that merely contains
+      the range, and the user who typed two dates would have no way to tell that the
+      chart had decided to show more.
+    */
+    if (to !== null) {
+      const endIndex = (() => {
+        for (let i = buckets.length - 1; i >= 0; i -= 1) {
+          if (buckets[i].date <= to) return i
+        }
+        return buckets.length - 1
+      })()
+
+      if (startIndex !== -1 && endIndex >= startIndex) {
+        setView({ start: startIndex, end: endIndex })
+        onGotoConsumed?.()
+        return
+      }
+      // The range falls outside the recorded data entirely.
+      setView(null)
+      onGotoConsumed?.()
+      return
+    }
+
+    const target = startIndex === -1 ? buckets.length - 1 : startIndex
     const count = Math.max(8, Math.min(buckets.length, viewWindow.count || buckets.length))
     let start = Math.round(target - count / 2)
     start = Math.max(0, Math.min(start, Math.max(0, buckets.length - count)))
