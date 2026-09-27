@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAppStore } from '@renderer/store/app'
 import { useRateStore } from '@renderer/store/rates'
 import { useUiStore } from '@renderer/store/ui'
@@ -14,11 +14,13 @@ import {
   categoryLabel,
   dateHeadingZh,
   deleteTransactionConfirm,
+  fillTemplate,
   transactionTypeLabel,
   txnCountLabel,
   txnTruncatedNotice
 } from '@shared/lib/i18n'
 import type { AccountWithBalance, Category, TransactionQuery, TransactionWithRefs } from '@shared/types'
+import { categoryColorFor, categoryTint } from '@shared/lib/category-colors'
 
 /**
  * Transactions list (spec §11 and the Transactions nav destination).
@@ -79,6 +81,9 @@ export default function TransactionsPage(): React.JSX.Element {
   const refreshRates = useRateStore((state) => state.refresh)
 
   const { run, pending } = useAction()
+  const pushToast = useAppStore((state) => state.pushToast)
+  /** Export is its own pending flag: it must not disable the edit buttons. */
+  const [exporting, setExporting] = useState(false)
 
   // Rates must be in place before any converted figure is drawn, otherwise the
   // first paint would show original amounts and then silently correct itself.
@@ -89,9 +94,39 @@ export default function TransactionsPage(): React.JSX.Element {
   const scopedAccountId = accountId ? Number(accountId) : null
   const validAccountId = scopedAccountId !== null && Number.isInteger(scopedAccountId) ? scopedAccountId : null
 
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
-  const [categoryFilter, setCategoryFilter] = useState<number | null>(null)
+  /*
+    Filters, seeded from the URL (v1.6.0).
+
+    `?categoryId=3&from=…&to=…` is what the Overview ring links to, and `?type=` is what a
+    search result may hand over. Reading them here rather than inventing a category-detail
+    screen is the whole point: the list already owns the filter UI, the edit entry points
+    and the export button, so a ring click lands on the real thing with its chips visible
+    instead of on a look-alike view that could disagree with it.
+  */
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlCategoryId = Number(searchParams.get('categoryId'))
+  const urlType = searchParams.get('type')
+  const urlFrom = searchParams.get('from')
+  const urlTo = searchParams.get('to')
+
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(
+    urlType === 'income' || urlType === 'expense' || urlType === 'transfer' ? urlType : 'all'
+  )
+  const [categoryFilter, setCategoryFilter] = useState<number | null>(
+    Number.isInteger(urlCategoryId) && urlCategoryId > 0 ? urlCategoryId : null
+  )
   const [searchText, setSearchText] = useState('')
+  /**
+   * An explicit date range from the URL, which OVERRIDES the month strip.
+   *
+   * The Overview ring is showing a settlement cycle, not a calendar month, so pressing a
+   * slice must land on the same days the slice was computed from. The strip still works —
+   * moving it clears the override, because a reader who then presses "next month" is
+   * asking for a different period, not for the rangeless version of this one.
+   */
+  const [rangeOverride, setRangeOverride] = useState<{ from: string; to: string } | null>(
+    urlFrom && urlTo ? { from: urlFrom, to: urlTo } : null
+  )
 
   const { data: accounts } = useAsync<AccountWithBalance[]>(() => window.api.accountsList(), [])
   const { data: categories } = useAsync<Category[]>(() => window.api.categoriesList(), [])
@@ -99,14 +134,24 @@ export default function TransactionsPage(): React.JSX.Element {
   /** The cycle the strip is showing, derived from the stored cycle key. */
   const cycle = useMemo(() => cycleFromKey(activeMonth, cycleStartDay), [activeMonth, cycleStartDay])
 
+  const effectiveFrom = rangeOverride?.from ?? cycle.start
+  const effectiveTo = rangeOverride?.to ?? cycle.end
+
+  /** Drop the URL-borne filters, and the URL with them. */
+  const clearIncomingFilters = useCallback((): void => {
+    setRangeOverride(null)
+    setCategoryFilter(null)
+    setSearchParams({}, { replace: true })
+  }, [setSearchParams])
+
   /**
    * The query object is memoised so `useAsync` receives a stable value and does
    * not refetch on every render.
    */
   const transactionQuery = useMemo<TransactionQuery>(() => {
     const filter: TransactionQuery = {
-      from: cycle.start,
-      to: cycle.end,
+      from: effectiveFrom,
+      to: effectiveTo,
       limit: 1000,
       orderBy: 'date',
       orderDir: 'desc'
@@ -116,7 +161,7 @@ export default function TransactionsPage(): React.JSX.Element {
     if (categoryFilter !== null) filter.categoryIds = [categoryFilter]
     if (searchText.trim()) filter.search = searchText.trim()
     return filter
-  }, [cycle.start, cycle.end, typeFilter, validAccountId, categoryFilter, searchText])
+  }, [effectiveFrom, effectiveTo, typeFilter, validAccountId, categoryFilter, searchText])
 
   const { data: page, loading, error, reload } = useAsync(
     () => window.api.transactionsList(transactionQuery),
@@ -187,8 +232,62 @@ export default function TransactionsPage(): React.JSX.Element {
     refreshData()
   }
 
+  /**
+   * Export the CURRENT filter as a real .xlsx (spec §28–§33).
+   *
+   * The query sent is `transactionQuery` — the same object the list is rendered from —
+   * so "what you see is what you get" is structural rather than a promise: there is no
+   * second filter builder to drift from the visible one.
+   *
+   * Deliberately NOT wrapped in `useAction`: that helper's failure toast says "No changes
+   * were made", which is the wrong sentence for a read-only export (nothing was going to
+   * be changed either way). The success toast names the row count and the file, because
+   * "Exported" without a number is how a filtered export becomes a mystery.
+   */
+  async function handleExportExcel(): Promise<void> {
+    setExporting(true)
+    try {
+      const result = await window.api.exportXlsx(transactionQuery)
+      if (result.canceled) {
+        pushToast({ tone: 'info', message: T.txpExportCanceled })
+        return
+      }
+      pushToast({
+        tone: 'success',
+        message: fillTemplate(T.txpExported, { n: result.rows }),
+        detail: result.path ?? undefined
+      })
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        message: error instanceof Error ? error.message : T.txpExportFailed,
+        detail: T.txpExportFailedHint
+      })
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  /** Moving the month strip is a different question, so any URL range is dropped. */
+  function stepMonth(delta: number): void {
+    setRangeOverride(null)
+    setActiveMonth(shiftCycle(`${activeMonth}-01`, cycleStartDay, delta).key)
+  }
+
   const hasFilters = searchText.trim() !== '' || typeFilter !== 'all' || categoryFilter !== null
   const ratesMissing = ratesInfo?.hasRates === false
+
+  /*
+    What "Export Excel" is about to write (spec §31).
+
+    The button says how many rows it will export, because a filter the reader forgot about
+    is the single most likely reason for a spreadsheet that is missing rows — and "38"
+    next to the button is a cheaper correction than half an hour in Excel wondering where
+    the rest went.
+  */
+  const exportCount = page?.total ?? page?.items.length ?? 0
+  const filteredCategory = categories?.find((item) => item.id === categoryFilter) ?? null
+  const exportRange = rangeOverride !== null
 
   return (
     <div className="txp">
@@ -215,12 +314,43 @@ export default function TransactionsPage(): React.JSX.Element {
               {T.txpClearAccountFilter}
             </button>
           ) : null}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={exporting || exportCount === 0}
+            title={T.txpExportHint}
+            onClick={() => void handleExportExcel()}
+          >
+            <Icon name="export" size={16} />
+            {exporting ? T.txpExporting : fillTemplate(T.txpExportExcel, { n: exportCount })}
+          </button>
           <button type="button" className="btn btn-primary" onClick={() => openCreate()}>
             <Icon name="plus" size={16} />
             {T.txpAddTransaction}
           </button>
         </div>
       </header>
+
+      {/*
+        The filters that arrived from another screen, named rather than left implicit.
+
+        A ring click lands here with a category and a period already applied; without this
+        row the only evidence would be a `<select>` somewhere below the fold, and the
+        export button would report a count the reader cannot explain.
+      */}
+      {rangeOverride !== null || categoryFilter !== null ? (
+        <div className="txp__incoming" role="status">
+          <Icon name="info" size={15} />
+          <span>
+            {T.txpIncomingFrom}
+            {filteredCategory ? ` ${T.txpIncomingCategory} ${categoryLabel(filteredCategory.name)}` : ''}
+            {exportRange ? ` · ${rangeOverride?.from} → ${rangeOverride?.to}` : ''}
+          </span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={clearIncomingFilters}>
+            {T.txpIncomingClear}
+          </button>
+        </div>
+      ) : null}
 
       {ratesMissing ? (
         <div className="txp__ratesNotice" role="status">
@@ -244,7 +374,7 @@ export default function TransactionsPage(): React.JSX.Element {
             type="button"
             className="btn btn-ghost btn-icon"
             aria-label={T.txpPrevPeriod}
-            onClick={() => setActiveMonth(shiftCycle(`${activeMonth}-01`, cycleStartDay, -1).key)}
+            onClick={() => stepMonth(-1)}
           >
             <Icon name="chevron-left" />
           </button>
@@ -253,14 +383,17 @@ export default function TransactionsPage(): React.JSX.Element {
             type="button"
             className="btn btn-ghost btn-icon"
             aria-label={T.txpNextPeriod}
-            onClick={() => setActiveMonth(shiftCycle(`${activeMonth}-01`, cycleStartDay, 1).key)}
+            onClick={() => stepMonth(1)}
           >
             <Icon name="chevron-right" />
           </button>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            onClick={() => setActiveMonth(cycleFor(today(), cycleStartDay).key)}
+            onClick={() => {
+              setRangeOverride(null)
+              setActiveMonth(cycleFor(today(), cycleStartDay).key)
+            }}
           >
             {T.thisMonth}
           </button>
@@ -399,8 +532,8 @@ export default function TransactionsPage(): React.JSX.Element {
                           <span
                             className="txp__rowIcon"
                             style={{
-                              background: isTransfer ? 'var(--bg-inset)' : `${item.categoryColor ?? '#6B7280'}1f`,
-                              color: item.categoryColor ?? 'var(--text-secondary)'
+                              background: isTransfer ? 'var(--bg-inset)' : categoryTint(categoryColorFor(item.categoryName, item.categoryColor)),
+                              color: categoryColorFor(item.categoryName, item.categoryColor)
                             }}
                           >
                             <Icon

@@ -11,6 +11,7 @@ import { addDays, today } from '@shared/lib/dates'
 import { CUSTOM_RANGE_PRESETS, PRESET_MAX_DAYS, validateCustomRange } from '@shared/lib/periods'
 import { categoryLabel, dateHeadingZh, currencyLabelZh } from '@shared/lib/i18n'
 import type { CustomPeriod, CustomPeriodStatistics } from '@shared/types'
+import { categoryColorFor, categoryTint } from '@shared/lib/category-colors'
 
 /**
  * 自定义区间统计 (arbitrary-period statistics).
@@ -361,7 +362,7 @@ export default function CustomPeriodPage(): React.JSX.Element {
                 rows={stats.categories.map((row) => ({
                   label: categoryLabel(row.categoryName),
                   value: row.total,
-                  color: row.categoryColor ?? 'var(--chart-1)',
+                  color: categoryColorFor(row.categoryName, row.categoryColor),
                   meta: `${Math.round(row.share * 100)}% · ${row.transactionCount} 笔`
                 }))}
                 currency={stats.currency}
@@ -380,8 +381,8 @@ export default function CustomPeriodPage(): React.JSX.Element {
                     <span
                       className="csp__listIcon"
                       style={{
-                        background: item.categoryColor ? `${item.categoryColor}1f` : 'var(--bg-inset)',
-                        color: item.categoryColor ?? 'var(--text-secondary)'
+                        background: categoryTint(categoryColorFor(item.categoryName, item.categoryColor)),
+                        color: categoryColorFor(item.categoryName, item.categoryColor)
                       }}
                     >
                       <Icon name={iconNameOr(item.categoryIcon, 'tag')} size={15} />

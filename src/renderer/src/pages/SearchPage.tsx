@@ -9,6 +9,7 @@ import { useUiStore } from '@renderer/store/ui'
 import { formatDate } from '@shared/lib/dates'
 import { T, categoryLabel, exportedRowsNotice, transactionTypeLabel } from '@shared/lib/i18n'
 import { parseAmountToMinor } from '@shared/lib/money'
+import { categoryColorFor } from '@shared/lib/category-colors'
 import type {
   AccountWithBalance,
   Category,
@@ -688,7 +689,7 @@ export default function SearchPage(): React.JSX.Element {
                       <div className="search-category">
                         <span
                           className="search-category__dot"
-                          style={{ backgroundColor: row.categoryColor ?? 'var(--text-tertiary)' }}
+                          style={{ backgroundColor: categoryColorFor(row.categoryName, row.categoryColor) }}
                           aria-hidden="true"
                         >
                           <Icon

@@ -11,7 +11,7 @@ import {
   type DatabaseHandle
 } from '@main/database/connection'
 import { assertId, Services } from '@main/services'
-import { readXlsxRows, writeCsvFile } from '@main/services/export'
+import { readXlsxRows, writeCsvFile, writeTransactionsXlsx, xlsxFileName } from '@main/services/export'
 import { IPC_CHANNELS } from '@shared/types/ipc-contract'
 import type {
   AccountInput,
@@ -687,6 +687,50 @@ export function registerIpcHandlers(context: IpcContext): void {
 
       const rows = svc().imports.exportRows(query ?? {})
       const written = writeCsvFile(result.filePath, rows)
+      return { canceled: false, path: result.filePath, rows: written }
+    }
+  )
+
+  /*
+    XLSX export (v1.6.0).
+
+    Read-only, like the CSV one: it queries and writes a file, and touches nothing in the
+    ledger. The suggested name comes from the FILTER rather than from today's date, so an
+    export of September is called September — a folder of files named after the day they
+    were made is a folder nobody can use.
+
+    `CASHINFLOW_EXPORT_DIR` bypasses the save dialog, in the same spirit as the other
+    documented test hooks in this project: a native file dialog cannot be driven by a
+    verification script, so the hook is what makes "the button exports the filtered rows"
+    an assertion instead of a claim. It is read from the MAIN process environment, never
+    from the renderer, so it cannot be set by anything running in the page.
+  */
+  handle<[TransactionQuery], { canceled: boolean; path: string | null; rows: number }>(
+    IPC_CHANNELS.exportXlsx,
+    context,
+    {},
+    async (query) => {
+      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? undefined
+      const suggested = xlsxFileName(query ?? {})
+      const overrideDir = process.env.CASHINFLOW_EXPORT_DIR?.trim()
+
+      if (overrideDir) {
+        const destination = join(overrideDir, suggested)
+        const rows = svc().imports.exportRows(query ?? {})
+        const written = await writeTransactionsXlsx(destination, rows)
+        return { canceled: false, path: destination, rows: written }
+      }
+
+      const result = await dialog.showSaveDialog(window!, {
+        title: 'Export transactions as Excel',
+        defaultPath: join(app.getPath('documents'), suggested),
+        filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }]
+      })
+
+      if (result.canceled || !result.filePath) return { canceled: true, path: null, rows: 0 }
+
+      const rows = svc().imports.exportRows(query ?? {})
+      const written = await writeTransactionsXlsx(result.filePath, rows)
       return { canceled: false, path: result.filePath, rows: written }
     }
   )

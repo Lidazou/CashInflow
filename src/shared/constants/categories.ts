@@ -1,4 +1,5 @@
 import type { CategoryType } from '@shared/types'
+import { CATEGORY_COLOR_TOKENS } from '@shared/lib/category-colors'
 
 export interface SeedCategory {
   name: string
@@ -14,28 +15,33 @@ export interface SeedCategory {
  * These are marked `is_system = 1` so the UI can explain why they behave
  * differently from user-created ones, but they remain fully editable — a user
  * who calls "Food" something else should not have to fight the app.
+ *
+ * The colour comes from `CATEGORY_COLOR_TOKENS` rather than being written out here
+ * (v1.6.0). The same table is what the donut, the activity stack and the transaction
+ * list read, so a new database is born with the hue-separated set and a hand-picked
+ * colour on one screen can never disagree with another screen's idea of the palette.
  */
 export const SEED_CATEGORIES: readonly SeedCategory[] = [
   // --- Expense -----------------------------------------------------------
-  { name: 'Food', type: 'expense', icon: 'utensils', color: '#E8833A' },
-  { name: 'Transport', type: 'expense', icon: 'car', color: '#3B82F6' },
-  { name: 'Shopping', type: 'expense', icon: 'shopping-bag', color: '#A855F7' },
-  { name: 'Housing', type: 'expense', icon: 'home', color: '#0E7490' },
-  { name: 'Entertainment', type: 'expense', icon: 'gamepad', color: '#EC4899' },
-  { name: 'Education', type: 'expense', icon: 'book', color: '#6366F1' },
-  { name: 'Health', type: 'expense', icon: 'heart-pulse', color: '#EF4444' },
-  { name: 'Travel', type: 'expense', icon: 'plane', color: '#14B8A6' },
-  { name: 'Bills', type: 'expense', icon: 'receipt', color: '#F59E0B' },
-  { name: 'Subscription', type: 'expense', icon: 'repeat', color: '#8B5CF6' },
-  { name: 'Other', type: 'expense', icon: 'ellipsis', color: '#6B7280' },
+  { name: 'Food', type: 'expense', icon: 'utensils', color: CATEGORY_COLOR_TOKENS.Food },
+  { name: 'Transport', type: 'expense', icon: 'car', color: CATEGORY_COLOR_TOKENS.Transport },
+  { name: 'Shopping', type: 'expense', icon: 'shopping-bag', color: CATEGORY_COLOR_TOKENS.Shopping },
+  { name: 'Housing', type: 'expense', icon: 'home', color: CATEGORY_COLOR_TOKENS.Housing },
+  { name: 'Entertainment', type: 'expense', icon: 'gamepad', color: CATEGORY_COLOR_TOKENS.Entertainment },
+  { name: 'Education', type: 'expense', icon: 'book', color: CATEGORY_COLOR_TOKENS.Education },
+  { name: 'Health', type: 'expense', icon: 'heart-pulse', color: CATEGORY_COLOR_TOKENS.Health },
+  { name: 'Travel', type: 'expense', icon: 'plane', color: CATEGORY_COLOR_TOKENS.Travel },
+  { name: 'Bills', type: 'expense', icon: 'receipt', color: CATEGORY_COLOR_TOKENS.Bills },
+  { name: 'Subscription', type: 'expense', icon: 'repeat', color: CATEGORY_COLOR_TOKENS.Subscription },
+  { name: 'Other', type: 'expense', icon: 'ellipsis', color: CATEGORY_COLOR_TOKENS.Other },
 
   // --- Income ------------------------------------------------------------
-  { name: 'Salary', type: 'income', icon: 'briefcase', color: '#16A34A' },
-  { name: 'Freelance', type: 'income', icon: 'laptop', color: '#0D9488' },
-  { name: 'Investment', type: 'income', icon: 'trending-up', color: '#2563EB' },
-  { name: 'Gift', type: 'income', icon: 'gift', color: '#DB2777' },
-  { name: 'Refund', type: 'income', icon: 'undo', color: '#7C3AED' },
-  { name: 'Other', type: 'income', icon: 'ellipsis', color: '#6B7280' }
+  { name: 'Salary', type: 'income', icon: 'briefcase', color: CATEGORY_COLOR_TOKENS.Salary },
+  { name: 'Freelance', type: 'income', icon: 'laptop', color: CATEGORY_COLOR_TOKENS.Freelance },
+  { name: 'Investment', type: 'income', icon: 'trending-up', color: CATEGORY_COLOR_TOKENS.Investment },
+  { name: 'Gift', type: 'income', icon: 'gift', color: CATEGORY_COLOR_TOKENS.Gift },
+  { name: 'Refund', type: 'income', icon: 'undo', color: CATEGORY_COLOR_TOKENS.Refund },
+  { name: 'Other', type: 'income', icon: 'ellipsis', color: CATEGORY_COLOR_TOKENS.Other }
 ] as const
 
 /** Fallback category used when an import row has no resolvable category. */

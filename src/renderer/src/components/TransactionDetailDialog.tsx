@@ -6,6 +6,7 @@ import { Icon, iconNameOr } from '@renderer/components/Icon'
 import { formatMoney } from '@shared/lib/money'
 import { formatDate } from '@shared/lib/dates'
 import type { TransactionWithRefs } from '@shared/types'
+import { categoryColorFor, categoryTint } from '@shared/lib/category-colors'
 
 /**
  * Read-only transaction detail (spec §11).
@@ -88,8 +89,8 @@ export function TransactionDetailDialog(): React.JSX.Element | null {
             style={{
               background: isTransfer
                 ? 'var(--bg-inset)'
-                : `${transaction.categoryColor ?? 'var(--text-tertiary)'}1f`,
-              color: transaction.categoryColor ?? 'var(--text-secondary)'
+                : categoryTint(categoryColorFor(transaction.categoryName, transaction.categoryColor)),
+              color: categoryColorFor(transaction.categoryName, transaction.categoryColor)
             }}
           >
             <Icon

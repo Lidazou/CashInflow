@@ -1,4 +1,4 @@
-﻿import { createHash } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { readFileSync, existsSync, statSync } from 'node:fs'
 import { extname, basename } from 'node:path'
 import type { Database as SqliteDatabase } from 'better-sqlite3'
@@ -953,13 +953,24 @@ function dayDistance(a: string, b: string): number {
   return Math.abs(Math.round((da - db) / 86_400_000))
 }
 
-/** Build the export SELECT. Kept separate so it can be unit tested. */
+/**
+ * Build the export SELECT. Kept separate so it can be unit tested.
+ *
+ * v1.6.0 added `categoryIds`, `minAmount` and `maxAmount`, because the export is now
+ * driven by whatever the transaction list is showing and the list can be filtered by
+ * category (the Overview ring links straight to it). Without them an "export what I see"
+ * button would quietly export MORE than the reader was looking at, which is the one
+ * failure mode a filter-honouring export must not have.
+ */
 function buildExportQuery(query: {
   from?: string
   to?: string
   types?: string[]
   accountIds?: number[]
+  categoryIds?: number[]
   search?: string
+  minAmount?: number
+  maxAmount?: number
   limit?: number
 }): { sql: string; params: unknown[] } {
   const clauses: string[] = []
@@ -980,6 +991,20 @@ function buildExportQuery(query: {
   if (query.accountIds && query.accountIds.length > 0) {
     clauses.push(`t.account_id IN (${query.accountIds.map(() => '?').join(', ')})`)
     params.push(...query.accountIds)
+  }
+  if (query.categoryIds && query.categoryIds.length > 0) {
+    clauses.push(`t.category_id IN (${query.categoryIds.map(() => '?').join(', ')})`)
+    params.push(...query.categoryIds)
+  }
+  // Amount bounds compare MAGNITUDES, because a stored amount is signed: filtering
+  // "at least RM 100" must not exclude a RM 100 expense for being negative.
+  if (typeof query.minAmount === 'number') {
+    clauses.push('ABS(t.amount) >= ?')
+    params.push(Math.abs(query.minAmount))
+  }
+  if (typeof query.maxAmount === 'number') {
+    clauses.push('ABS(t.amount) <= ?')
+    params.push(Math.abs(query.maxAmount))
   }
   if (query.search && query.search.trim()) {
     const needle = `%${query.search.trim().toLowerCase()}%`

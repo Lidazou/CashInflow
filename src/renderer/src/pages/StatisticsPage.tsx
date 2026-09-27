@@ -6,6 +6,7 @@ import { useAsync } from '@renderer/hooks/useData'
 import { useDisplaySettings } from '@renderer/store/app'
 import { useUiStore } from '@renderer/store/ui'
 import { formatMoney } from '@shared/lib/money'
+import { categoryColorFor } from '@shared/lib/category-colors'
 import {
   addDays,
   addMonths,
@@ -82,29 +83,19 @@ function granularityLabel(granularity: StatisticsGranularity): string {
 /** Six rows of seven: a month view never reflows as the user pages through it. */
 const CALENDAR_CELLS = 42
 
-/**
- * Fallback series colours for a category with no stored colour — a user-created
- * category may have none, and a chart with an empty `stroke` renders an
- * invisible slice. Kept in step with the palette in components/charts.tsx.
- */
-const FALLBACK_SERIES_COLORS = [
-  'var(--chart-1)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)',
-  'var(--chart-6)',
-  'var(--chart-7)',
-  'var(--chart-8)'
-] as const
 
-function fallbackSeriesColor(index: number): string {
-  return FALLBACK_SERIES_COLORS[index % FALLBACK_SERIES_COLORS.length]
-}
+function categoryColorOf(row: CategoryBreakdownRow): string {
+  /*
+    One source of truth (v1.6.0).
 
-function categoryColorOf(row: CategoryBreakdownRow, index: number): string {
-  const stored = row.categoryColor
-  return stored && stored.trim() !== '' ? stored : fallbackSeriesColor(index)
+    This used to keep its own `var(--chart-1..8)` fallback table "in step with the palette
+    in components/charts.tsx" — two lists that had to be edited together and were one
+    forgotten commit away from disagreeing. The token table resolves a stored colour, an
+    old default, or a stable colour for a category the app has never heard of, so the same
+    category is now the same colour on the statistics page, the ring, the stack and the
+    transaction list.
+  */
+  return categoryColorFor(row.categoryName, row.categoryColor)
 }
 
 /** Share as a whole percentage; a non-zero sliver reads "<1%" rather than "0%". */
@@ -380,10 +371,10 @@ export default function StatisticsPage(): React.JSX.Element {
                     <div className="stp__catSplit">
                       <div className="stp__donut">
                         <DonutChart
-                          segments={result.categories.map((row, index) => ({
+                          segments={result.categories.map((row) => ({
                             label: categoryLabel(row.categoryName),
                             value: row.total,
-                            color: categoryColorOf(row, index)
+                            color: categoryColorOf(row)
                           }))}
                           size={168}
                           thickness={20}
@@ -397,10 +388,10 @@ export default function StatisticsPage(): React.JSX.Element {
 
                       <div className="stp__cats">
                         <HorizontalBarChart
-                          rows={result.categories.map((row, index) => ({
+                          rows={result.categories.map((row) => ({
                             label: categoryLabel(row.categoryName),
                             value: row.total,
-                            color: categoryColorOf(row, index),
+                            color: categoryColorOf(row),
                             meta: `${shareLabel(row.share)} · ${row.transactionCount} txn`
                           }))}
                           currency={reportCurrency}
@@ -685,7 +676,7 @@ function DayTransactionRow({
       >
         <span
           className="stp__txIcon"
-          style={{ color: isTransfer ? 'var(--text-secondary)' : transaction.categoryColor ?? 'var(--text-secondary)' }}
+          style={{ color: isTransfer ? 'var(--text-secondary)' : categoryColorFor(transaction.categoryName, transaction.categoryColor) }}
         >
           <Icon
             name={isTransfer ? 'arrow-left-right' : iconNameOr(transaction.categoryIcon, isIncome ? 'trending-up' : 'tag')}

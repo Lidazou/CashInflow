@@ -2,13 +2,16 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react'
 
 import { CashflowChart } from '@renderer/components/CashflowChart'
-import type { ChartFrame, HoverState } from '@renderer/components/CashflowChart'
+import type { ActivityZoomRequest, ChartFrame, CrosshairState } from '@renderer/components/CashflowChart'
 import { Icon } from '@renderer/components/Icon'
 import { Money } from '@renderer/components/Money'
 import { useUiStore } from '@renderer/store/ui'
 import { addDays, formatDate, today } from '@shared/lib/dates'
 import { instantOf } from '@shared/lib/chart-time'
-import { T, categoryLabel, klineTxCount } from '@shared/lib/i18n'
+import { ACTIVITY_VIEW_MODES } from '@shared/lib/daily-activity'
+import type { ActivityViewMode } from '@shared/lib/daily-activity'
+import { categoryColorFor } from '@shared/lib/category-colors'
+import { T, categoryLabel, fillTemplate, klineTxCount } from '@shared/lib/i18n'
 import { formatMoney } from '@shared/lib/money'
 import type { CashflowTransactionMarker, KlineBucket, KlineSeries, TransactionWithRefs } from '@shared/types'
 
@@ -65,7 +68,15 @@ const ALL_MA: readonly number[] = [5, 10, 20, 60, 250]
 export interface KlineSettings {
   rangeId: string
   maWindows: number[]
-  activityMode: 'flow' | 'count'
+  /**
+   * Which series the Daily Cash Activity panel draws (v1.6.0).
+   *
+   * Replaces the old `activityMode: 'flow' | 'count'`, which was a two-way toggle between
+   * "money" and "number of transactions". Both of those now live inside richer modes —
+   * `stack` shows the money AND what it was made of — so the old choice is gone rather
+   * than kept alongside as a sixth option nobody would pick.
+   */
+  activityView: ActivityViewMode
   customFrom: string | null
   customTo: string | null
 }
@@ -73,7 +84,7 @@ export interface KlineSettings {
 export const DEFAULT_KLINE_SETTINGS: KlineSettings = {
   rangeId: 'all',
   maWindows: [...DEFAULT_MA],
-  activityMode: 'flow',
+  activityView: 'stack',
   customFrom: null,
   customTo: null
 }
@@ -88,8 +99,38 @@ export interface KlinePanelProps {
   onRetry: () => void
 }
 
-/** Chart height in px. The two panels split it; neither may collapse. */
-const CHART_HEIGHT = 460
+/**
+ * Chart height in px. The two panels split it; neither may collapse.
+ *
+ * v1.6.0 raised this from 460 because the activity panel is no longer a strip: it is half
+ * the chart, and a half that cannot show a stack of five transactions is not a region.
+ * 560 keeps both panels plus the controls inside a 1080p window without scrolling.
+ */
+const CHART_HEIGHT = 560
+
+/**
+ * Names for the five activity series.
+ *
+ * Each one answers a different question, and the labels say which: "what was today made
+ * of", "did today add or remove money", "which side was bigger", "where has the period
+ * taken me", "which category is behind it". A selector whose options do not state their
+ * question is a selector nobody uses twice.
+ */
+const ACTIVITY_MODE_LABEL: Record<ActivityViewMode, string> = {
+  stack: T.klineActivityStack,
+  net: T.klineActivityNet,
+  incomeExpense: T.klineActivityIncomeExpense,
+  cumulative: T.klineActivityCumulative,
+  category: T.klineActivityCategory
+}
+
+const ACTIVITY_MODE_HINT: Record<ActivityViewMode, string> = {
+  stack: '一天一根柱子，柱子里按金额比例堆叠当天每一笔交易',
+  net: '一天一根柱子，在零轴上方表示净流入，下方表示净流出',
+  incomeExpense: '每天并排两根：左边收入，右边支出',
+  cumulative: '这段时间的累计净流（累计收入 − 累计支出）',
+  category: '一天一根柱子，柱子里按分类汇总，颜色与环状图一致'
+}
 
 export function KlinePanel({
   series,
@@ -114,7 +155,9 @@ export function KlinePanel({
   const [customOpen, setCustomOpen] = useState(false)
   const [customFrom, setCustomFrom] = useState(() => settings.customFrom ?? '')
   const [customTo, setCustomTo] = useState(() => settings.customTo ?? '')
+  const [zoomRequest, setZoomRequest] = useState<ActivityZoomRequest | null>(null)
   const tokenRef = useRef(0)
+  const zoomTokenRef = useRef(0)
   const chartRef = useRef<HTMLDivElement | null>(null)
 
   /**
@@ -127,8 +170,18 @@ export function KlinePanel({
     setRequest({ token: tokenRef.current, ...target })
   }, [])
 
+  /**
+   * Ask the activity panel's VALUE axis to move, which is a different axis from the
+   * time one: these buttons must never disturb the visible window, and "显示全部"
+   * must never silently reset the vertical zoom.
+   */
+  const bumpZoom = useCallback((action: ActivityZoomRequest['action']): void => {
+    zoomTokenRef.current += 1
+    setZoomRequest({ token: zoomTokenRef.current, action })
+  }, [])
+
   /* ---- header focus: cursor first, then the clicked candle, then the newest ---- */
-  const hoverCandle: KlineBucket | null = frame?.hover?.candle?.bucket ?? null
+  const hoverCandle: KlineBucket | null = frame?.crosshair?.candle?.bucket ?? null
   const focus = useMemo(() => {
     if (!series) return null
     if (hoverCandle) return hoverCandle
@@ -463,6 +516,61 @@ export function KlinePanel({
 
         <div className="kl__spacer" />
 
+        {/*
+          Which series the lower panel draws (spec §20).
+
+          A segmented control rather than a dropdown: these are five different questions
+          about the same days, and the reader switching between them is comparing, which
+          a menu hides and a row of buttons does not.
+        */}
+        <div className="kl__modes" role="group" aria-label={T.klineActivityViewLabel}>
+          {ACTIVITY_VIEW_MODES.map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className={`kl__mode ${settings.activityView === mode ? 'is-active' : ''}`}
+              aria-pressed={settings.activityView === mode}
+              title={ACTIVITY_MODE_HINT[mode]}
+              onClick={() => onSettings({ activityView: mode })}
+            >
+              {ACTIVITY_MODE_LABEL[mode]}
+            </button>
+          ))}
+        </div>
+
+        <div className="kl__zoomctl" role="group" aria-label={T.klineActivityZoomLabel}>
+          <button
+            type="button"
+            className="kl__zoombtn"
+            title={T.klineActivityZoomOut}
+            aria-label={T.klineActivityZoomOut}
+            onClick={() => bumpZoom('out')}
+          >
+            −
+          </button>
+          <span className="num kl__zoomvalue" title={T.klineActivityZoomHint}>
+            {frame ? `${frame.activityZoom < 10 ? frame.activityZoom.toFixed(1) : Math.round(frame.activityZoom)}×` : '1.0×'}
+          </span>
+          <button
+            type="button"
+            className="kl__zoombtn"
+            title={T.klineActivityZoomIn}
+            aria-label={T.klineActivityZoomIn}
+            onClick={() => bumpZoom('in')}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="kl__zoombtn kl__zoombtn--reset"
+            title={T.klineActivityZoomReset}
+            aria-label={T.klineActivityZoomReset}
+            onClick={() => bumpZoom('reset')}
+          >
+            <Icon name="refresh" size={11} />
+          </button>
+        </div>
+
         <div className="kl__ma">
           <button
             type="button"
@@ -564,15 +672,17 @@ export function KlinePanel({
             series={series}
             displayCurrency={displayCurrency}
             maWindows={settings.maWindows}
-            activityMode={settings.activityMode}
+            activityMode={settings.activityView}
             height={CHART_HEIGHT}
             onFrame={setFrame}
             onClickBucket={(bucket) => setSelectedDate(bucket.date)}
             onClickMarker={(marker) => void openTransaction(marker.transactionId)}
+            onClickSegment={(segment) => void openTransaction(segment.transactionId)}
             viewRequest={request}
+            zoomRequest={zoomRequest}
           />
 
-          {frame?.hover ? <HoverCard frame={frame} displayCurrency={displayCurrency} host={chartRef.current} /> : null}
+          {frame?.crosshair ? <HoverCard frame={frame} displayCurrency={displayCurrency} host={chartRef.current} /> : null}
 
           {noTimeNotice ? <p className="kl__notice muted">{T.klineNoTimeNotice}</p> : null}
 
@@ -589,15 +699,12 @@ export function KlinePanel({
               <i className="kl__swatch kl__swatch--marker" />
               每笔交易（横线位置＝该笔之后的余额）
             </span>
+            <span className="kl__legend-item">
+              <i className="kl__swatch kl__swatch--stack" />
+              {T.klineActivityLegend}
+            </span>
             <span className="kl__legend-spacer" />
             <span className="muted">{T.klineZoomHint}</span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => onSettings({ activityMode: settings.activityMode === 'flow' ? 'count' : 'flow' })}
-            >
-              切换副图
-            </button>
           </div>
         </div>
       )}
@@ -731,18 +838,86 @@ function HoverCard({
   displayCurrency: string
   host: HTMLDivElement | null
 }): JSX.Element | null {
-  const hover: HoverState = frame.hover as HoverState
-  const cardW = 218
-  const cardH = hover.marker ? 176 : 206
+  const crosshair: CrosshairState = frame.crosshair as CrosshairState
+  const cardW = 232
+  const cardH = crosshair.segment ? 214 : crosshair.marker ? 176 : 206
   const hostW = host?.clientWidth ?? 900
-  const hostH = host?.clientHeight ?? 460
+  const hostH = host?.clientHeight ?? 560
 
-  const right = hover.px + 16
-  const left = right + cardW <= hostW - 4 ? right : Math.max(4, hover.px - cardW - 16)
-  const top = Math.max(4, Math.min(hover.py - 24, Math.max(4, hostH - cardH - 4)))
+  const right = crosshair.px + 16
+  const left = right + cardW <= hostW - 4 ? right : Math.max(4, crosshair.px - cardW - 16)
+  const top = Math.max(4, Math.min(crosshair.py - 24, Math.max(4, hostH - cardH - 4)))
 
-  const marker = hover.marker?.marker ?? null
-  const bucket = hover.candle?.bucket ?? null
+  const marker = crosshair.marker?.marker ?? null
+  const bucket = crosshair.candle?.bucket ?? null
+  const segment = crosshair.segment
+
+  /*
+    A SEGMENT of the activity stack (spec §18).
+
+    This is the card a reader gets when they point at a stacked column: the day, which
+    transaction, its direction and amount, what share of the day it is, where it sits in
+    the day's order, and its cumulative range inside the column — which is the number the
+    crosshair itself resolved against, printed so the hit test can be checked by eye.
+  */
+  if (segment) {
+    const column = crosshair.column
+    const income = segment.type === 'income'
+    const colour = categoryColorFor(segment.categoryName, segment.categoryColor)
+    const total = column ? (income ? column.totalIncome : column.totalExpense) : 0
+    return (
+      <div className="kl__card kl__card--segment" style={{ left, top, width: cardW }} role="status">
+        <div className="kl__card-head">
+          <span className="num">{segment.date}</span>
+          <span className="muted">
+            {fillTemplate(T.klineActivityIndex, { index: segment.index, count: segment.count })}
+          </span>
+        </div>
+        <p className="kl__card-title truncate">
+          {segment.merchant ?? (segment.categoryName ? categoryLabel(segment.categoryName) : T.klineUnnamed)}
+        </p>
+        <div className="kl__card-sub truncate">
+          <i className="kl__dot" style={{ backgroundColor: colour }} />
+          {[categoryLabel(segment.categoryName), segment.accountName].filter(Boolean).join(' · ')}
+        </div>
+        <div className={`kl__card-amount num ${income ? 'is-up' : 'is-down'}`}>
+          {income ? '+' : '−'}
+          {formatMoney(segment.amount, displayCurrency)}
+        </div>
+        <dl className="kl__card-rows">
+          <div>
+            <dt>{income ? T.klineActivityDayIncome : T.klineActivityDayTotal}</dt>
+            <dd className="num">{formatMoney(total, displayCurrency)}</dd>
+          </div>
+          <div>
+            <dt>{T.klineTooltipShare}</dt>
+            <dd className="num">{(segment.percentage * 100).toFixed(1)}%</dd>
+          </div>
+          <div>
+            <dt>{T.klineActivityRangeLabel}</dt>
+            <dd className="num">
+              {formatMoney(segment.startAmount, displayCurrency, { compact: true })} →{' '}
+              {formatMoney(segment.endAmount, displayCurrency, { compact: true })}
+            </dd>
+          </div>
+          {column && column.transferCount > 0 ? (
+            <div>
+              <dt>{T.klineTooltipCount}</dt>
+              <dd className="num">
+                {fillTemplate(T.klineActivityTxCount, { n: column.transactionCount, transfers: column.transferCount })}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+        {segment.time !== null ? (
+          <div className="kl__card-sub num">{segment.time}</div>
+        ) : (
+          <div className="kl__card-sub muted">{T.klineTooltipTimeUnknown}</div>
+        )}
+        {segment.unconverted ? <div className="kl__card-sub muted">{T.klineUnconverted}</div> : null}
+      </div>
+    )
+  }
 
   return (
     <div className="kl__card" style={{ left, top, width: cardW }} role="status">
@@ -944,6 +1119,53 @@ const KLINE_PANEL_STYLES = `
 .kl__swatch--up { background-color: transparent; border: 1px solid var(--market-up); }
 .kl__swatch--down { background-color: var(--market-down); }
 .kl__swatch--marker { background-color: transparent; border-top: 1px solid var(--market-marker-hover); height: 1px; }
+/* The stack swatch is the one that has to LOOK like the panel: bands of unequal size. */
+.kl__swatch--stack {
+  background-image: linear-gradient(
+    to bottom,
+    var(--chart-1) 0 38%,
+    var(--chart-3) 38% 66%,
+    var(--chart-5) 66% 100%
+  );
+  border: 1px solid var(--border-subtle);
+}
+
+/* ---- activity view selector (v1.6.0) ---- */
+.kl__modes {
+  display: inline-flex; align-items: center; gap: 2px;
+  background-color: var(--bg-inset); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); padding: 2px;
+}
+.kl__mode {
+  appearance: none; border: none; background: transparent;
+  font: inherit; font-size: var(--text-2xs); color: var(--text-secondary);
+  padding: 4px 9px; border-radius: var(--radius-sm); cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.kl__mode:hover { color: var(--text-primary); }
+.kl__mode.is-active { background-color: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-xs); font-weight: var(--weight-medium); }
+
+/* ---- activity value-axis zoom ---- */
+.kl__zoomctl {
+  display: inline-flex; align-items: center; gap: 1px;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+  background-color: var(--bg-inset); padding: 2px;
+}
+.kl__zoombtn {
+  appearance: none; border: none; background: transparent; cursor: pointer;
+  font: inherit; font-size: var(--text-sm); line-height: 1;
+  color: var(--text-secondary); width: 22px; height: 22px; border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.kl__zoombtn:hover { background-color: var(--bg-hover); color: var(--text-primary); }
+.kl__zoomvalue {
+  min-width: 38px; text-align: center; font-size: var(--text-2xs);
+  color: var(--text-secondary); font-variant-numeric: tabular-nums;
+}
+
+/* ---- hover card: the transaction segment ---- */
+.kl__card--segment { border-color: var(--accent); }
+.kl__dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: -1px; }
 
 /* ---- daily detail ---- */
 .kl__detail { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }

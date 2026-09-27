@@ -13,9 +13,22 @@ import {
   timeTicks,
   toTimeKey,
   valueDomain,
+  visibleRange,
   zoomViewport
 } from '@shared/lib/chart-time'
 import type { ValueDomain, Viewport } from '@shared/lib/chart-time'
+import {
+  ACTIVITY_MAX_ZOOM,
+  ACTIVITY_MIN_ZOOM,
+  activityScale,
+  buildColumns,
+  columnAt,
+  pickSegment,
+  yAtAmount,
+  zeroLineY
+} from '@shared/lib/daily-activity'
+import type { ActivityColumn, ActivityScale, ActivitySegment, ActivityViewMode } from '@shared/lib/daily-activity'
+import { categoryColorFor } from '@shared/lib/category-colors'
 import { T } from '@shared/lib/i18n'
 import { formatMoney } from '@shared/lib/money'
 import type { CashflowTransactionMarker, KlineBucket, KlineGranularity, KlineSeries } from '@shared/types'
@@ -23,55 +36,66 @@ import type { CashflowTransactionMarker, KlineBucket, KlineGranularity, KlineSer
 /**
  * CashflowChart — the cashflow terminal's canvas layer.
  *
- * TWO PANELS, ONE AXIS
- * --------------------
- * The balance K-line and the cash-activity bars are separate panels:
- *
- *     ┌──────────────────────────────────────────────┐
- *     │  BALANCE K-LINE          OHLC · wick · MA    │  ~71%
- *     ├──────────────────────────────────────────────┤  1px divider
- *     │  CASH ACTIVITY           income / expense    │  ~29%
- *     └──────────────────────────────────────────────┘
+ * TWO PANELS, ONE TIME AXIS, TWO VALUE AXES (v1.6.0)
+ *     ┌─────────────────────────────────────────────┐
+ *     │  BALANCE K-LINE          OHLC · wick · MA    │  ~52%
+ *     ├─────────────────────────────────────────────┤  1px divider
+ *     │  DAILY CASH ACTIVITY     stacked transactions │  ~48%
+ *     └─────────────────────────────────────────────┘
  *        time axis, drawn once, shared
  *
- * They share exactly one thing — the time axis — and share it absolutely. One
- * `Viewport` in milliseconds, one tick array, one crosshair. Two panels with their
- * own time ranges is the failure this shape exists to prevent: a K-line scrolled to
- * September above bars still showing August is a chart that lies about cause.
+ * They share EXACTLY ONE thing — the time axis and the day index on it — and share it
+ * absolutely. One `Viewport` in milliseconds, one tick array, one `CrosshairState`.
+ * Two panels with their own time ranges is the failure this shape exists to prevent: a
+ * K-line scrolled to September above columns still showing August is a chart that lies
+ * about cause.
  *
  * Everything else is deliberately NOT shared:
  *
  *   - **Y axis.** Balance is a stock, activity is a flow; they are not the same
- *     quantity. A RM 3,000 salary into a RM 8,000 account would, on a shared axis,
- *     flatten the balance to a line. On separate axes the balance keeps its shape
- *     and the salary gets a bar of its own height.
- *   - **Value range.** The balance axis is fitted to the visible balance window —
- *     crucially NOT to zero, see `valueDomain` — while the activity axis is fitted
- *     to zero, because a flow chart that does not start at zero misstates every bar.
- *   - **Canvas and draw pass.** One canvas per panel, so repainting the bars can
+ *     quantity. A RM 12,000 salary and a RM 200 dinner on ONE axis is a chart where
+ *     the dinner is a five-pixel relic at the baseline. On separate axes the balance
+ *     keeps its shape and the dinner keeps its height.
+ *   - **Vertical zoom.** The activity axis has a zoom of its own, because fitting to
+ *     the maximum is still not enough when the reader is asking about the small days.
+ *   - **Value range.** The balance axis is fitted to the visible balance window — *     crucially NOT to zero, see `valueDomain` — while the activity axis is fitted
+ *     through zero, because a flow chart that does not start at zero misstates every
+ *     bar and every share inside it.
+ *   - **Canvas and draw pass.** One canvas per panel, so repainting the stacks can
  *     never smear the candles, and the divider between them is a real 1px gap
  *     rather than a line painted over one picture.
  *
+ * THE ACTIVITY PANEL IS A STACK, NOT A FIELD OF HAIRLINES
+ * ------------------------------------------------------
+ * Until v1.5.3 this panel drew one hairline per transaction, at the height of the
+ * balance it produced. That is a picture of the balance drawn a second time — it says
+ * nothing about what the money was. It now draws ONE COLUMN PER DAY, and that column is
+ * the day's own transactions stacked end to end, each as tall as its share of the day.
+ * The proportions are the real ones: nothing is averaged, nothing is a fixed height, and
+ * a day with five transactions and a day with one are directly comparable.
+ *
+ * Time still orders the stack. It never becomes a coordinate: the x axis is days.
+ *
  * CONTINUOUS, CURSOR-ANCHORED ZOOM
  * --------------------------------
- * Zoom is `span × f` about the instant under the pointer, so what the pointer is
- * on stays under the pointer for the whole gesture. It is CONTINUOUS: no ladder of
+ * Horizontal zoom is `span × f` about the instant under the pointer, so what the pointer
+ * is on stays under the pointer for the whole gesture. It is CONTINUOUS: no ladder of
  * zoom levels, only the time range the reader has scrolled to, with the candle size
  * derived from that range rather than chosen from a menu.
  *
  * WHY CANVAS
  * ----------
- * A decade of daily candles is ~3,650 bodies, each with a wick and a handful of
- * markers — tens of thousands of primitives. As DOM nodes that is a stall on pan;
- * as canvas strokes it is one frame. The hover card is HTML, because it is text and
- * tables and re-implementing text layout in canvas would buy nothing.
+ * A decade of daily candles is ~3,650 bodies, each with a wick and a stack of segments
+ * — tens of thousands of primitives. As DOM nodes that is a stall on pan; as canvas
+ * strokes it is one frame. The hover card is HTML, because it is text and tables and
+ * re-implementing text layout in canvas would buy nothing.
  *
  * This file draws; it does not decide. Settings live in `KlinePanel`, which also
- * renders the header, the controls, the zoom badge and the hover card.
+ * renders the header, the controls, the zoom badges and the hover card.
  */
 
 /**
- * Interactive radius for a transaction, in px.
+ * Interactive radius for a transaction on the BALANCE panel, in px.
  *
  * TWENTY, against a marker that is often a single pixel tall. This gap is the whole
  * reason a RM 0.50 entry on a RM 100,000 account is clickable: at any zoom where
@@ -80,22 +104,32 @@ import type { CashflowTransactionMarker, KlineBucket, KlineGranularity, KlineSer
  * wide enough to forgive the pointer. Shrinking the marker to match its importance
  * while keeping its hit area generous is the rule; the reverse (a fat marker for a
  * tiny amount) would be a chart that lies about the money.
+ *
+ * The ACTIVITY panel does not use a radius at all: it converts the pointer's height
+ * into an amount and looks the amount up in the column's cumulative ranges, so a
+ * segment two tenths of a pixel tall is selectable and stays selectable at any size.
  */
 const HIT_RADIUS_PX = 20
 
 /** How close two entries must be before their markers are pulled apart. */
 const STACK_PX = 3
 
-const ACTIVITY_MIN_PX = 110
-const BALANCE_MIN_PX = 150
+const ACTIVITY_MIN_PX = 170
+const BALANCE_MIN_PX = 190
 
 /** Nominal split of the chart's height, before the minimums are enforced. */
-const BALANCE_SHARE = 0.715
+const BALANCE_SHARE = 0.52
 
 /** Value-axis gutter, on the right, where the amount labels live. */
 const AXIS_W = 76
 /** Height of the shared time axis at the bottom of the activity panel. */
-const TIME_AXIS_H = 20
+const TIME_AXIS_H = 22
+
+/** How long freshly built segments take to grow in, in ms (spec 鎼?8: 150— 50). */
+const SEGMENT_ANIM_MS = 190
+
+/** Multiplier applied per wheel notch or button press on the activity value axis. */
+const ACTIVITY_ZOOM_STEP = 1.6
 
 interface Palette {
   up: string
@@ -182,20 +216,55 @@ export interface CandleGeometry {
   down: boolean
 }
 
-/** What is under the pointer. Resolved once, consumed by both panels and the tooltip. */
-export interface HoverState {
+/**
+ * What the pointer is on — resolved ONCE, consumed by everything (spec 鎼?3).
+ *
+ * THE BUG THIS EXISTS TO KILL
+ * ---------------------------
+ * The crosshair used to be assembled by three parties: the chart decided which marker
+ * was near the pointer, the vertical line followed that marker's TRUE instant, the
+ * horizontal line followed the raw pointer height, and the tooltip read the candle
+ * whose bucket contained the marker. On a week or month zoom those three answers are
+ * three different dates, which is how a reader ends up looking at a vertical line on
+ * Sep 28, a horizontal line at RM 720 and a tooltip that says Sep 27 / RM 680.
+ *
+ * Everything below is derived from one resolution, so the lines, the tags, the header
+ * and the card cannot describe different things. In particular:
+ *
+ *   - `crossX` is the x of the SELECTED data point (the candle's slot centre on the
+ *     balance panel, the column's slot centre on the activity panel).
+ *   - `crossY` is the y of the SELECTED data point — the transaction's own balance on
+ *     the balance panel, the pointer's amount inside the selected segment on the
+ *     activity panel — never the raw pointer position on the balance panel.
+ *   - `value` is what the axis tag prints, and it is the amount `crossY` represents.
+ */
+export interface CrosshairState {
   /** Pointer, in chart-local px. */
   px: number
   py: number
-  panel: 'balance' | 'activity'
-  /** x the vertical crosshair is drawn at, after snapping. */
+  /** Which panel resolved it. `gutter` means the value-axis strip on the right. */
+  panel: 'balance' | 'activity' | 'gutter'
+  /** x the vertical crosshair is drawn at, in both panels. */
   crossX: number
-  marker: ChartMarker | null
-  candle: CandleGeometry | null
-  /** Value under the pointer on the hovered panel's own axis. Null in the gutter. */
-  value: number | null
-  /** Time under the vertical crosshair. */
+  /** y the horizontal crosshair is drawn at, in the panel that owns it. */
+  crossY: number
+  /** Shared date index: the same bucket drives both panels. */
+  dateIndex: number
+  /** The bucket's key date, or null when the pointer is outside the buckets. */
+  date: string
+  /** Instant under the vertical crosshair. */
   instant: number
+  candle: CandleGeometry | null
+  marker: ChartMarker | null
+  /** Activity: the column and the transaction (or category band) under the pointer. */
+  column: ActivityColumn | null
+  segment: ActivitySegment | null
+  /** Amount at the pointer's height on the hovered panel's own axis. */
+  pointerValue: number | null
+  /** The amount the horizontal line and its tag report (snapped, see above). */
+  value: number | null
+  /** True when the pointer is inside the hovered panel's plot rectangle. */
+  inside: boolean
 }
 
 /** Everything the caller needs to render a header and a hover card consistently. */
@@ -205,14 +274,30 @@ export interface ChartFrame {
   /** Human name of the visible span, e.g. "3个月". */
   zoomLabel: string
   /** Plot geometry, so a verification run can convert pixels to instants exactly. */
-  geometry: { plotLeft: number; plotRight: number; balanceTop: number; balanceBottom: number; activityTop: number; activityBottom: number }
+  geometry: {
+    plotLeft: number
+    plotRight: number
+    balanceTop: number
+    balanceBottom: number
+    activityTop: number
+    activityBottom: number
+    /** y of the activity panel's zero baseline, after zoom. */
+    activityZeroY: number
+  }
   buckets: KlineBucket[]
   candles: CandleGeometry[]
   markers: ChartMarker[]
   balance: ValueDomain
   activity: ValueDomain
-  hover: HoverState | null
-  /** MA values at the hovered (or last) bucket, keyed by window. */
+  /** The activity panel's own scale, including the reader's vertical zoom. */
+  activityScale: ActivityScale
+  /** The activity panel's columns — one per visible bucket, each a stack of days. */
+  activityColumns: ActivityColumn[]
+  /** Which series the activity panel is drawing. */
+  activityMode: ActivityViewMode
+  activityZoom: number
+  crosshair: CrosshairState | null
+  /** MA values at the crosshair's bucket, or the last one. */
   ma: Array<{ windowSize: number; value: number | null }>
 }
 
@@ -231,17 +316,34 @@ export interface ViewRequest {
   toMs?: number
 }
 
+/**
+ * An instruction to the activity panel's VALUE axis (not the time axis).
+ *
+ * Kept separate from `ViewRequest` because they are different axes: one moves through
+ * time, the other changes how tall a ringgit is. Mixing them into one request type
+ * would make every "reset the view" button silently reset the reader's vertical zoom
+ * as well.
+ */
+export interface ActivityZoomRequest {
+  token: number
+  action: 'in' | 'out' | 'reset'
+}
+
 export interface CashflowChartProps {
   series: KlineSeries
   displayCurrency: string
   maWindows: number[]
-  activityMode: 'flow' | 'count'
+  activityMode: ActivityViewMode
   height?: number
   onFrame?: (frame: ChartFrame | null) => void
   onClickBucket?: (bucket: KlineBucket) => void
   onClickMarker?: (marker: CashflowTransactionMarker) => void
-  /** Jump the view: everything, an explicit span, or a day at the current zoom. */
+  /** Click on an activity segment: the same transaction, reached from the stack. */
+  onClickSegment?: (segment: ActivitySegment) => void
+  /** Jump the view in time: everything, an explicit span, or a day at the current zoom. */
   viewRequest?: ViewRequest | null
+  /** Move the activity panel's value axis. */
+  zoomRequest?: ActivityZoomRequest | null
 }
 
 /* -------------------------------------------------------------------------- */
@@ -494,11 +596,13 @@ export function CashflowChart({
   displayCurrency,
   maWindows,
   activityMode,
-  height = 470,
+  height = 560,
   onFrame,
   onClickBucket,
   onClickMarker,
-  viewRequest
+  onClickSegment,
+  viewRequest,
+  zoomRequest
 }: CashflowChartProps): JSX.Element {
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const balanceRef = useRef<HTMLCanvasElement | null>(null)
@@ -509,7 +613,14 @@ export function CashflowChart({
   const [width, setWidth] = useState(0)
   const [measured, setMeasured] = useState({ balance: 0, activity: 0 })
   const [viewport, setViewport] = useState<Viewport | null>(null)
-  const [pointer, setPointer] = useState<{ px: number; py: number; panel: 'balance' | 'activity' } | null>(null)
+  const [pointer, setPointer] = useState<{ px: number; py: number; panel: 'balance' | 'activity' | 'gutter' } | null>(null)
+  /** The activity panel's own vertical zoom, >= 1. Lives here, not in the parent:
+   *  the wheel gesture must not round-trip through a React state update in another
+   *  component, and the frame reports the value so the badge can show it. */
+  const [activityZoom, setActivityZoom] = useState(1)
+  /** Grows 0 → 1 once whenever the segment set is rebuilt, so a mode switch reads as
+   *  a change rather than a jump cut. Never applied to the crosshair. */
+  const [segmentProgress, setSegmentProgress] = useState(1)
 
   const dragRef = useRef<{ pointerId: number; x: number; start: Viewport; moved: boolean } | null>(null)
   const palette = usePalette()
@@ -577,30 +688,15 @@ export function CashflowChart({
       : bucketDaily(series.daily, granularity)
   }, [series.daily, series.dayMarkers, granularity, active])
 
-  /** Candles intersecting the window. Binary search, then walk forward. */
-  const visible = useMemo(() => {
-    if (buckets.length === 0) return [] as InstantBucket[]
-    let lo = 0
-    let hi = buckets.length - 1
-    let start = 0
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1
-      const next = mid + 1 < buckets.length ? buckets[mid + 1].instant : Number.POSITIVE_INFINITY
-      if (next <= active.from) lo = mid + 1
-      else if (buckets[mid].instant > active.to) hi = mid - 1
-      else {
-        start = mid
-        break
-      }
-      start = Math.max(0, lo)
-    }
-    const out: InstantBucket[] = []
-    for (let i = start; i < buckets.length; i += 1) {
-      if (buckets[i].instant > active.to) break
-      out.push(buckets[i])
-    }
-    return out
-  }, [buckets, active])
+  /**
+   * Candles intersecting the window, in order.
+   *
+   * `visibleRange` is a lower bound on each bucket's END, so it returns the FIRST bucket
+   * that intersects the window. The loop this replaced returned whichever bucket the
+   * binary search happened to land on, which with the whole history in view is the
+   * middle one — see the note on `visibleRange` itself.
+   */
+  const visible = useMemo(() => visibleRange(buckets, active, bounds.to), [buckets, active, bounds.to])
 
   const averages = useMemo(() => {
     const closes = buckets.map((bucket) => bucket.balanceClose)
@@ -678,17 +774,41 @@ export function CashflowChart({
     return valueDomain(low, high, { minStep })
   }, [visible, averages, visibleIndex, displayCurrency, markerExtremes])
 
+  /*
+    THE ACTIVITY PANEL'S COLUMNS (spec 鎼?, 鎼?, 鎼?5)
+
+    One column per visible bucket, built from the day markers the service already ships.
+    At day granularity that is literally one column per day, each a stack of that day's
+    transactions in ledger order; at week/month granularity the days fold into the
+    bucket, so the column is the bucket's stack and the x position still means one thing
+    to both panels.
+
+    Derived, never stored: this is geometry for a view, and writing it anywhere would
+    give the database a second, staler copy of the ledger.
+  */
+  const activityColumns = useMemo(
+    () => buildColumns(visible, series.daily, series.dayMarkers, granularity),
+    [visible, series.daily, series.dayMarkers, granularity]
+  )
+
+  /**
+   * The activity axis: fitted to the visible columns, then divided by the reader's zoom.
+   *
+   * Independent of `balanceDomain` above on purpose (spec 鎼?). RM 12,000 of income and
+   * RM 200 of dinner on one axis is a chart where the dinner does not exist.
+   */
+  const activity = useMemo(
+    () => activityScale(activityColumns, activityMode, activityZoom),
+    [activityColumns, activityMode, activityZoom]
+  )
+
   const activityDomain = useMemo(() => {
-    let max = 0
-    for (const bucket of visible) {
-      max =
-        activityMode === 'count'
-          ? Math.max(max, bucket.transactionCount)
-          : Math.max(max, bucket.income, bucket.expense)
-    }
-    // Always anchored at zero: a flow chart whose bars float misstates every one.
-    return valueDomain(0, max > 0 ? max : 1, { minStep: 1 })
-  }, [visible, activityMode])
+    // Zero is always inside this domain: bars are drawn from the baseline, so an axis
+    // that excluded it would misstate every share in the stack.
+    const low = activity.expense > 0 ? -activity.expense : 0
+    const high = activity.income > 0 ? activity.income : 0
+    return valueDomain(low, high, { minStep: 1 })
+  }, [activity])
 
   const timeToX = useCallback(
     (ms: number): number => plotLeft + ((ms - active.from) / spanMs) * plotWidth,
@@ -749,95 +869,169 @@ export function CashflowChart({
     [visible, timeToX, step, bodyW, balanceToY]
   )
 
+  /* The activity panel's zero baseline and the amount the pointer's height means. */
+  const activityZeroY = useMemo(
+    () => zeroLineY(panels.activity.top, panels.activity.bottom, activity, activityMode),
+    [panels.activity, activity, activityMode]
+  )
+
   /**
-   * Resolve the pointer to a transaction, a candle and a value — once.
+   * Resolve the pointer into ONE crosshair state — once (spec §12–§19).
    *
-   * ONE resolution feeding both panels, the crosshair and the hover card is what
-   * keeps them from describing three slightly different things. Every consumer reads
-   * this object, and the hovered marker's highlight is DERIVED from it rather than
-   * stored, so there is no second, staler copy of "what is under the cursor".
+   * The order below is the whole fix:
+   *
+   *   1. `px` — a bucket index. One index, shared, which is what makes the vertical line,
+   *      the candle, the activity column and the date label the same day by construction.
+   *   2. On the BALANCE panel, a nearby transaction marker (within `HIT_RADIUS_PX`, ranked
+   *      by drawn position) or the bucket's own candle. The horizontal line is then drawn
+   *      at THAT point's balance — not at the raw pointer height, which is the v1.5.x bug
+   *      where the two lines pointed at different data.
+   *   3. On the ACTIVITY panel, the pointer's height is converted to an amount on the
+   *      activity axis, and the amount picks the segment by its cumulative range. A
+   *      segment is a RANGE, so the horizontal line stays where the pointer is and the
+   *      card names the segment that contains it; those two can never disagree because
+   *      the segment was chosen BY the amount the line is at.
    */
-  const hover = useMemo<HoverState | null>(() => {
+  const crosshair = useMemo<CrosshairState | null>(() => {
     if (pointer === null || candles.length === 0) return null
     const { px, py, panel } = pointer
 
-    /*
-      Nearest transaction, ranked by where the hairline is DRAWN.
+    /* --- 1. one shared x --- */
+    let dateIndex = step > 0 ? Math.floor((px - plotLeft) / step) : 0
+    dateIndex = Math.max(0, Math.min(candles.length - 1, dateIndex))
+    const candle = candles[dateIndex] ?? null
+    const bucket = visible[dateIndex] ?? null
 
-      Aiming is a visual act: the reader points at a line they can see. For an entry that had to
-      be nudged aside because another landed on top of it, the drawn position IS the line they
-      see — so ranking on the TRUE instant instead leaves that entry permanently unclickable,
-      with the pointer resolving to whichever neighbour happens to sit nearer the un-nudged
-      coordinate. Which is what measuring found: on the fixture's midday cluster, a marker
-      drawn at x=623 resolved to the entry at x=626 every time.
-
-      The crosshair still snaps to the true instant below, so what the reader is TOLD about when
-      a transaction happened is unaffected by the nudge.
-    */
+    /* --- 2. the balance panel's own resolution --- */
     let marker: ChartMarker | null = null
-    let best = HIT_RADIUS_PX
-    for (const entry of markers) {
-      const dx = Math.abs(entry.drawX - px)
-      if (dx > HIT_RADIUS_PX) continue
-      const dy = panel === 'balance' ? Math.abs(entry.y - py) : 0
-      const distance = panel === 'balance' ? Math.hypot(dx, dy) : dx
-      if (distance <= best) {
-        best = distance
-        marker = entry
-      }
-    }
-
-    let candle: CandleGeometry | null = null
-    if (marker !== null) {
-      for (const candidate of candles) {
-        const next = stepInstant(candidate.instant, granularity, 1)
-        if (marker.instant >= candidate.instant && marker.instant < next) {
-          candle = candidate
-          break
+    if (panel === 'balance') {
+      let best = HIT_RADIUS_PX
+      for (const entry of markers) {
+        const dx = Math.abs(entry.drawX - px)
+        if (dx > HIT_RADIUS_PX) continue
+        const distance = Math.hypot(dx, entry.y - py)
+        if (distance <= best) {
+          best = distance
+          marker = entry
         }
       }
+    } else {
+      /*
+        In the activity panel the crosshair still reports the transaction it is on, but
+        it is resolved by AMOUNT below, not by pixel proximity to a hairline. The marker
+        is looked up from that segment so the card and the balance panel agree about
+        which ledger row is selected.
+      */
+      marker = null
     }
-    if (candle === null && step > 0) {
-      const index = Math.max(0, Math.min(candles.length - 1, Math.floor((px - plotLeft) / step)))
-      candle = candles[index]
+
+    /* --- 3. the activity panel's own resolution, in data space --- */
+    let column: ActivityColumn | null = null
+    let segment: ActivitySegment | null = null
+    let pointerValue: number | null = null
+    if (panel === 'activity' && bucket !== null) {
+      const picked = pickSegment(
+        activityColumns,
+        bucket.instant,
+        py,
+        panels.activity.top,
+        panels.activity.bottom,
+        activityZeroY,
+        activity,
+        activityMode
+      )
+      column = picked?.column ?? columnAt(activityColumns, bucket.instant)
+      segment = picked?.segment ?? null
+      pointerValue = picked?.amount ?? null
+      if (segment !== null) {
+        marker =
+          markers.find((entry) => entry.marker.transactionId === segment?.transactionId) ?? null
+      }
     }
 
-    const crossX = marker !== null ? marker.x : candle !== null ? candle.x : px
-    const instant = active.from + ((crossX - plotLeft) / plotWidth) * spanMs
+    const plot = panel === 'activity' ? panels.activity : panels.balance
+    const inside = py >= plot.top && py <= plot.bottom && px >= plotLeft && px <= plotRight
 
-    const plot = panel === 'balance' ? panels.balance : panels.activity
-    const domain = panel === 'balance' ? balanceDomain : activityDomain
-    const inside = py >= plot.top && py <= plot.bottom
-    const value = inside
-      ? domain.min + ((plot.bottom - py) / Math.max(1, plot.bottom - plot.top)) * (domain.max - domain.min)
-      : null
+    /* --- what the lines are drawn at --- */
+    const crossX = candle !== null ? candle.x : px
+    let crossY = py
+    let value: number | null = null
 
-    return { px, py, panel, crossX, marker, candle, value, instant }
+    if (panel === 'balance') {
+      // Snap to the point being reported, so the horizontal line is AT the number.
+      if (marker !== null) {
+        value = marker.marker.balanceAfter ?? balanceAtY(py)
+        crossY = marker.y
+      } else if (candle !== null) {
+        value = candle.bucket.balanceClose
+        crossY = candle.yClose
+      }
+    } else if (panel === 'activity') {
+      value = pointerValue
+      crossY = Math.max(panels.activity.top, Math.min(panels.activity.bottom, py))
+    } else {
+      value = inside ? balanceAtY(py) : null
+    }
+
+    const instant = bucket !== null ? bucket.instant : active.from + ((px - plotLeft) / plotWidth) * spanMs
+
+    return {
+      px,
+      py,
+      panel,
+      crossX,
+      crossY,
+      dateIndex,
+      date: bucket?.date ?? keyOf(instant),
+      instant,
+      candle,
+      marker,
+      column,
+      segment,
+      pointerValue,
+      value,
+      inside
+    }
+
+    function balanceAtY(y: number): number | null {
+      const domain = panel === 'activity' ? activityDomain : balanceDomain
+      const target = panel === 'activity' ? panels.activity : panels.balance
+      if (y < target.top || y > target.bottom) return null
+      return (
+        domain.min +
+        ((target.bottom - y) / Math.max(1, target.bottom - target.top)) * (domain.max - domain.min)
+      )
+    }
   }, [
     pointer,
     candles,
     markers,
+    visible,
     step,
     plotLeft,
+    plotRight,
     plotWidth,
     active.from,
     spanMs,
     panels,
     balanceDomain,
     activityDomain,
-    granularity
+    activityColumns,
+    activity,
+    activityZeroY,
+    activityMode
   ])
 
-  /** The same marker set with the resolved hover baked in, for the draw passes. */
+  /** The same marker set with the resolved crosshair baked in, for the draw passes. */
   const litMarkers = useMemo(() => {
-    const id = hover?.marker?.marker.transactionId
+    const id = crosshair?.marker?.marker.transactionId
     if (id === undefined) return markers
     return markers.map((entry) => (entry.marker.transactionId === id ? { ...entry, hovered: true } : entry))
-  }, [markers, hover])
+  }, [markers, crosshair])
 
   const frame = useMemo<ChartFrame | null>(() => {
     if (visible.length === 0) return null
-    const focus = hover?.candle ?? candles[candles.length - 1]
+    const focus = crosshair?.candle ?? candles[candles.length - 1]
     const index = focus ? visibleIndex.get(focus.instant) : undefined
     return {
       viewport: active,
@@ -849,14 +1043,19 @@ export function CashflowChart({
         balanceTop: panels.balance.top,
         balanceBottom: panels.balance.bottom,
         activityTop: panels.activity.top,
-        activityBottom: panels.activity.bottom
+        activityBottom: panels.activity.bottom,
+        activityZeroY
       },
       buckets: visible,
       candles,
       markers,
       balance: balanceDomain,
       activity: activityDomain,
-      hover,
+      activityScale: activity,
+      activityColumns,
+      activityMode,
+      activityZoom: activity.zoom,
+      crosshair,
       ma: averages.map((entry) => ({
         windowSize: entry.windowSize,
         value: index === undefined ? null : (entry.values[index] ?? null)
@@ -864,7 +1063,7 @@ export function CashflowChart({
     }
   }, [
     visible,
-    hover,
+    crosshair,
     candles,
     active,
     granularity,
@@ -872,6 +1071,10 @@ export function CashflowChart({
     markers,
     balanceDomain,
     activityDomain,
+    activity,
+    activityColumns,
+    activityMode,
+    activityZeroY,
     averages,
     visibleIndex,
     panels,
@@ -942,6 +1145,43 @@ export function CashflowChart({
     // fight the reader's own panning.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewRequest])
+
+  /* ---- external control: the activity panel's VALUE axis ---- */
+  const consumedZoom = useRef<number | null>(null)
+  useEffect(() => {
+    if (!zoomRequest || consumedZoom.current === zoomRequest.token) return
+    consumedZoom.current = zoomRequest.token
+    setActivityZoom((current) => {
+      if (zoomRequest.action === 'reset') return 1
+      const next = zoomRequest.action === 'in' ? current * ACTIVITY_ZOOM_STEP : current / ACTIVITY_ZOOM_STEP
+      return Math.min(ACTIVITY_MAX_ZOOM, Math.max(ACTIVITY_MIN_ZOOM, next))
+    })
+  }, [zoomRequest])
+
+  /*
+    The 190ms grow-in for a new stack.
+
+    Deliberately NOT part of the crosshair path: it re-runs only when the segment set is
+    rebuilt (a mode switch, a zoom, a different window), never on pointer movement, so a
+    reader moving the mouse across the panel gets an immediate crosshair. The spec asks
+    for exactly this split — segments may animate, the crosshair may not.
+  */
+  useEffect(() => {
+    if (activityColumns.length === 0) return
+    setSegmentProgress(0)
+    let raf = 0
+    const started = performance.now()
+    const tick = (now: number): void => {
+      const ratio = Math.min(1, (now - started) / SEGMENT_ANIM_MS)
+      setSegmentProgress(ratio)
+      if (ratio < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+    // Keyed on what the stack IS, not on its identity: a repaint of the same columns
+    // must not restart the animation, or the bars would breathe while panning.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activityMode, granularity, activityColumns.length, activityColumns[0]?.date ?? ''])
 
   /* ---- drawing ---- */
   const drawBalance = useCallback(() => {
@@ -1045,8 +1285,10 @@ export function CashflowChart({
     }
 
     /* --- horizontal crosshair + value tag, only when the pointer is in THIS panel --- */
-    if (hover !== null && hover.panel === 'balance') {
-      const y = Math.round(hover.py) + 0.5
+    if (crosshair !== null && crosshair.panel === 'balance') {
+      // At the SELECTED point's balance, not at the pointer: the vertical line, the
+      // horizontal line, the tag and the card must all describe one data point.
+      const y = Math.round(crosshair.crossY) + 0.5
       ctx.save()
       ctx.strokeStyle = palette.crosshair
       ctx.globalAlpha = 0.45
@@ -1058,7 +1300,7 @@ export function CashflowChart({
       ctx.restore()
     }
 
-    if (hover !== null) drawVerticalCrosshair(ctx, hover.crossX, top, bottom, palette)
+    if (crosshair !== null) drawVerticalCrosshair(ctx, crosshair.crossX, top, bottom, palette.crosshair)
   }, [
     width,
     chartWidth,
@@ -1076,10 +1318,23 @@ export function CashflowChart({
     timeToX,
     step,
     balanceToY,
-    hover,
+    crosshair,
     bodyW
   ])
 
+  /**
+   * The Daily Cash Activity panel.
+   *
+   * FIVE SERIES, ONE COORDINATE SYSTEM (spec 鎼?0, 鎼?1)
+   * -------------------------------------------------
+   * Every mode below draws into the same plot, on the same x slots, against the same
+   * independent value axis, and is resolved through the same `CrosshairState`. Adding a
+   * mode therefore means writing a draw loop — never a second crosshair, and never a
+   * second axis that disagrees with the one the tooltip reads.
+   *
+   * The stack mode is the one this panel exists for: one column per day, its
+   * transactions end to end, each as tall as its true share of that day.
+   */
   const drawActivity = useCallback(() => {
     const canvas = activityRef.current
     if (!canvas || width <= 0) return
@@ -1088,68 +1343,229 @@ export function CashflowChart({
     paintCanvas(canvas, ctx, chartWidth, panels.activityHeight)
     const font = getComputedStyle(document.body).fontFamily || 'sans-serif'
     const { top, bottom } = panels.activity
-
-    drawValueGrid(ctx, activityDomain, top, bottom, plotLeft, plotRight, palette, displayCurrency, font)
-
-    const zeroY = bottom
-    for (const candle of candles) {
-      const bucket = candle.bucket
-      const width = candle.bodyRight - candle.bodyLeft
-      if (activityMode === 'count') {
-        if (bucket.transactionCount <= 0) continue
-        const ratio = activityDomain.max > 0 ? bucket.transactionCount / activityDomain.max : 0
-        const h = Math.max(1, ratio * (bottom - top))
-        ctx.fillStyle = palette.activity
-        ctx.globalAlpha = 0.85
-        ctx.fillRect(candle.bodyLeft, bottom - h, width, h)
-        ctx.globalAlpha = 1
-        continue
-      }
-      const half = (bottom - top) / 2
-      if (bucket.income > 0) {
-        const ratio = activityDomain.max > 0 ? bucket.income / activityDomain.max : 0
-        const h = Math.max(1, ratio * (half - 2))
-        ctx.fillStyle = palette.up
-        ctx.globalAlpha = 0.85
-        ctx.fillRect(candle.bodyLeft, zeroY - h, width, h)
-        ctx.globalAlpha = 1
-      }
-      if (bucket.expense > 0) {
-        const ratio = activityDomain.max > 0 ? bucket.expense / activityDomain.max : 0
-        const h = Math.max(1, ratio * (half - 2))
-        ctx.fillStyle = palette.down
-        ctx.globalAlpha = 0.85
-        ctx.fillRect(candle.bodyLeft, zeroY, width, h)
-        ctx.globalAlpha = 1
-      }
-    }
+    const zeroY = activityZeroY
 
     /*
-      Individual transactions as thin columns, on top of the aggregates.
+      The activity grid, drawn per the axis model the mode uses.
 
-      At a coarse zoom they collapse into the bar they belong to and cost nothing; at
-      maximum zoom they ARE the chart, and the reader sees six columns where the day
-      bar used to be. This is why the same panel serves "what did September look
-      like" and "what did 12:14 cost" without a mode switch.
+      For the composition modes each direction is fitted to its own maximum, so there is
+      no single set of tick values to print: each half gets its own ladder, tinted in that
+      direction's colour. That is not decoration — it is the only honest way to show a
+      chart whose up side is scaled to RM 12,000 while its down side is scaled to RM 200.
     */
-    for (const entry of litMarkers) {
-      const flow = entry.marker.convertedDelta
-      if (flow === null || flow === 0 || entry.marker.type === 'transfer') continue
-      const half = (bottom - top) / 2
-      const ratio = activityDomain.max > 0 ? Math.abs(flow) / activityDomain.max : 0
-      const h = Math.max(1, ratio * (half - 2))
-      const y = flow > 0 ? zeroY - h : zeroY
-      ctx.globalAlpha = entry.hovered ? 1 : 0.6
-      ctx.fillStyle = flow > 0 ? palette.up : palette.down
-      ctx.fillRect(Math.round(entry.drawX) - 1, y, 2, h)
+    if (activity.split === 'perDirection') {
+      drawSplitGrid(ctx, activity, zeroY, top, bottom, plotLeft, plotRight, palette, displayCurrency, font)
+    } else {
+      drawValueGrid(ctx, activityDomain, top, bottom, plotLeft, plotRight, palette, displayCurrency, font)
+    }
+
+    const columnW = (index: number): { left: number; width: number } => {
+      const candle = candles[index]
+      const slotCentre = candle ? candle.x : timeToX(activityColumns[index]?.instant ?? active.from) + step / 2
+      const w = slotCentreWidth(step)
+      return { left: Math.round(slotCentre - w / 2), width: Math.max(1, Math.round(w)) }
+    }
+    /** Column bodies use the same slot as the candle above, so they line up exactly. */
+    const slotCentreWidth = (slot: number): number => Math.max(1, Math.min(72, slot * 0.86))
+    /** Height in px for an amount, in the given direction, on the zoomed axis. */
+    const heightFor = (amount: number, up: boolean): number => {
+      const span = up ? activity.income : activity.expense
+      const pixels = up ? Math.max(1, zeroY - top) : Math.max(1, bottom - zeroY)
+      if (span <= 0) return 0
+      return (amount / span) * pixels
+    }
+    const grow = 0.25 + 0.75 * segmentProgress
+
+    /* --- the zero baseline, always drawn: shares are read against it --- */
+    if (zeroY > top && zeroY < bottom) {
+      ctx.strokeStyle = palette.axis
+      ctx.globalAlpha = 0.5
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(plotLeft, Math.round(zeroY) + 0.5)
+      ctx.lineTo(plotRight, Math.round(zeroY) + 0.5)
+      ctx.stroke()
       ctx.globalAlpha = 1
     }
 
-    if (hover !== null && hover.panel === 'activity') {
-      const y = Math.round(hover.py) + 0.5
+    const selectedId = crosshair?.segment?.transactionId ?? null
+    const selectedDate = crosshair?.panel === 'activity' ? crosshair.date : null
+
+    for (let index = 0; index < activityColumns.length; index += 1) {
+      const column = activityColumns[index]
+      const { left, width: w } = columnW(index)
+      if (left + w < plotLeft - 2 || left > plotRight + 2) continue
+      const isFocus = selectedDate !== null && column.date === selectedDate
+
+      if (activityMode === 'stack' || activityMode === 'category') {
+        /*
+          Stacked composition.
+
+          `segments` is the day's own transactions in ledger order (stack mode) or the
+          category roll-up (category mode). Either way each band's height is
+          `amount / total × available`, so the proportions are the data's, and a RM 1
+          band inside a RM 10,000 column is a real, selectable, zero-height band rather
+          than something that was rounded away.
+        */
+        const drawStack = (
+          segments: ReadonlyArray<{ amount: number; color: string; id: number | null }>,
+          up: boolean,
+          baseAlpha: number
+        ): void => {
+          const total = segments.reduce((sum, entry) => sum + entry.amount, 0)
+          if (total <= 0) return
+          let cursor = 0
+          for (const entry of segments) {
+            const h = heightFor(entry.amount, up) * grow
+            const start = cursor
+            cursor += h
+            // A band is never thinner than one pixel: a band that rounds to zero INSIDE
+            // a column that is drawn is indistinguishable from a missing transaction,
+            // and the crosshair would report something the reader cannot see at all.
+            const height = Math.max(1, h)
+            const y = up ? zeroY - start - height : zeroY + start
+            ctx.globalAlpha = baseAlpha
+            ctx.fillStyle = entry.color
+            ctx.fillRect(left, y, w, height)
+            /* The selected band is outlined, so the card and the pixels agree about
+               which transaction is being described — including when it is 1px tall. */
+            if (entry.id !== null && entry.id === selectedId) {
+              ctx.globalAlpha = 1
+              ctx.strokeStyle = palette.text
+              ctx.lineWidth = 1.5
+              ctx.strokeRect(left + 0.75, Math.round(y) + 0.75, Math.max(1, w - 1.5), Math.max(1, height - 1.5))
+            }
+            ctx.globalAlpha = 1
+          }
+          /* Clipped: say so, rather than drawing a bar that quietly stops. */
+          const drawn = cursor
+          const available = up ? Math.max(1, zeroY - top) : Math.max(1, bottom - zeroY)
+          if (drawn > available + 0.5) {
+            ctx.fillStyle = palette.text
+            ctx.beginPath()
+            const cy = up ? top + 3 : bottom - 3
+            ctx.moveTo(left + w / 2 - 3, cy + (up ? 0 : 0))
+            ctx.lineTo(left + w / 2 + 3, cy)
+            ctx.lineTo(left + w / 2, cy + (up ? 3 : -3))
+            ctx.closePath()
+            ctx.fill()
+          }
+        }
+
+        if (activityMode === 'stack') {
+          drawStack(
+            column.expense.map((segment) => ({
+              amount: segment.amount,
+              color: categoryColorFor(segment.categoryName, segment.categoryColor),
+              id: segment.transactionId
+            })),
+            false,
+            isFocus ? 0.98 : 0.82
+          )
+          drawStack(
+            column.income.map((segment) => ({
+              amount: segment.amount,
+              color: categoryColorFor(segment.categoryName, segment.categoryColor),
+              id: segment.transactionId
+            })),
+            true,
+            isFocus ? 0.98 : 0.82
+          )
+        } else {
+          const bands = (type: 'income' | 'expense'): Array<{ amount: number; color: string; id: number | null }> =>
+            column.categories
+              .filter((entry) => entry.type === type)
+              .map((entry) => ({
+                amount: entry.amount,
+                color: categoryColorFor(entry.key === '\u2014' ? null : entry.key, entry.color),
+                id: null
+              }))
+          drawStack(bands('expense'), false, isFocus ? 0.98 : 0.85)
+          drawStack(bands('income'), true, isFocus ? 0.98 : 0.85)
+        }
+        continue
+      }
+
+      if (activityMode === 'net') {
+        /* One bar per column: income − expense, above or below the baseline. */
+        const net = column.netCashFlow * grow
+        const up = net >= 0
+        const h = Math.max(net === 0 ? 0 : 1, heightFor(Math.abs(net), up))
+        if (h <= 0) continue
+        const y = up ? zeroY - h : zeroY
+        ctx.globalAlpha = isFocus ? 1 : 0.85
+        ctx.fillStyle = up ? palette.up : palette.down
+        ctx.fillRect(left, y, w, h)
+        ctx.globalAlpha = 1
+        continue
+      }
+
+      if (activityMode === 'incomeExpense') {
+        /* Two half-width columns per slot: what came in beside what went out. */
+        const halfW = Math.max(1, Math.floor(w / 2))
+        const incomeH = heightFor(column.totalIncome, true) * grow
+        const expenseH = heightFor(column.totalExpense, false) * grow
+        ctx.globalAlpha = isFocus ? 1 : 0.85
+        if (incomeH > 0) {
+          ctx.fillStyle = palette.up
+          ctx.fillRect(left, zeroY - Math.max(1, incomeH), halfW, Math.max(1, incomeH))
+        }
+        if (expenseH > 0) {
+          ctx.fillStyle = palette.down
+          ctx.fillRect(left + halfW, zeroY, Math.max(1, w - halfW), Math.max(1, expenseH))
+        }
+        ctx.globalAlpha = 1
+      }
+    }
+
+    /* --- cumulative: a continuous line over the same slots --- */
+    if (activityMode === 'cumulative' && activityColumns.length > 0) {
+      ctx.strokeStyle = palette.activity
+      ctx.lineWidth = 1.75
+      ctx.lineJoin = 'round'
+      ctx.beginPath()
+      let started = false
+      for (let index = 0; index < activityColumns.length; index += 1) {
+        const column = activityColumns[index]
+        const { left, width: w } = columnW(index)
+        const x = left + w / 2
+        const y = yAtAmount(column.cumulativeCashFlow, top, bottom, zeroY, activity, activityMode)
+        if (started) ctx.lineTo(x, y)
+        else {
+          ctx.moveTo(x, y)
+          started = true
+        }
+      }
+      ctx.stroke()
+
+      /* The area under it, faint, so the direction is readable at a glance. */
+      const gradient = ctx.createLinearGradient(0, top, 0, bottom)
+      gradient.addColorStop(0, palette.up)
+      gradient.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.globalAlpha = 0.16
+      ctx.fillStyle = gradient
+      ctx.beginPath()
+      for (let index = 0; index < activityColumns.length; index += 1) {
+        const column = activityColumns[index]
+        const { left, width: w } = columnW(index)
+        const x = left + w / 2
+        const y = yAtAmount(column.cumulativeCashFlow, top, bottom, zeroY, activity, activityMode)
+        if (index === 0) ctx.moveTo(x, zeroY)
+        ctx.lineTo(x, y)
+      }
+      const lastSlot = columnW(activityColumns.length - 1)
+      ctx.lineTo(lastSlot.left + lastSlot.width / 2, zeroY)
+      ctx.closePath()
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+
+    /* --- the crosshair: horizontal at the amount, vertical at the shared date --- */
+    if (crosshair !== null && crosshair.panel === 'activity') {
+      const y = Math.round(crosshair.crossY) + 0.5
       ctx.save()
       ctx.strokeStyle = palette.crosshair
-      ctx.globalAlpha = 0.45
+      ctx.globalAlpha = 0.5
       ctx.setLineDash([3, 3])
       ctx.beginPath()
       ctx.moveTo(plotLeft, y)
@@ -1157,8 +1573,15 @@ export function CashflowChart({
       ctx.stroke()
       ctx.restore()
     }
-
-    if (hover !== null) drawVerticalCrosshair(ctx, hover.crossX, top, bottom, palette)
+    if (crosshair !== null) {
+      drawVerticalCrosshair(
+        ctx,
+        crosshair.crossX,
+        top,
+        bottom,
+        crosshair.panel === 'activity' ? palette.markerHover : palette.crosshair
+      )
+    }
 
     /* --- the shared time axis, drawn once, at the bottom of this panel --- */
     ctx.font = `10px ${font}`
@@ -1184,14 +1607,20 @@ export function CashflowChart({
     panels.activity,
     panels.axisTop,
     activityDomain,
+    activity,
+    activityZeroY,
+    activityColumns,
+    activityMode,
+    segmentProgress,
     plotLeft,
     plotRight,
     palette,
     displayCurrency,
     candles,
-    litMarkers,
-    activityMode,
-    hover,
+    active.from,
+    crosshair,
+    step,
+    timeToX,
     times
   ])
 
@@ -1216,7 +1645,7 @@ export function CashflowChart({
   )
 
   /**
-   * Wheel zoom.
+   * Wheel handling — and, since v1.6.0, TWO KINDS OF ZOOM.
    *
    * BOUND IN AN EFFECT WITH `passive: false`, not through React's `onWheel`.
    *
@@ -1227,6 +1656,15 @@ export function CashflowChart({
    * cancelled only while the pointer is over one of the two panels, so the rest of
    * the page keeps scrolling normally.
    *
+   * WHICH AXIS THE WHEEL DRIVES
+   * ---------------------------
+   *   - Over the ACTIVITY panel: its own VALUE axis. That is the panel a reader zooms
+   *     when a RM 200 day sits under a RM 12,000 month, and it is where the gesture
+   *     should do the local thing.
+   *   - Over the BALANCE panel: the time axis, as before.
+   *   - Ctrl (or ⌘) anywhere: the time axis, so the familiar gesture is still available
+   *     from either panel.
+   *
    * `stopPropagation` as well as `preventDefault`: a parent scroll container that
    * listens in the bubble phase would otherwise see the event it was never meant to.
    */
@@ -1236,12 +1674,28 @@ export function CashflowChart({
 
     const onWheel = (event: WheelEvent): void => {
       const delta = Math.max(-240, Math.min(240, event.deltaY))
-      const factor = Math.exp(delta * 0.0016)
-      if (!Number.isFinite(factor) || factor === 1) return
+      if (delta === 0) return
+      const rect = element.getBoundingClientRect()
+      const localY = event.clientY - rect.top
+      const overActivity = localY >= (activityBoxRef.current?.offsetTop ?? Number.POSITIVE_INFINITY)
+      const wantsTime = event.ctrlKey || event.metaKey || !overActivity
+
       event.preventDefault()
       event.stopPropagation()
-      const rect = element.getBoundingClientRect()
-      setViewport((current) => zoomViewport(current ?? bounds, factor, anchorRatio(event.clientX - rect.left), bounds))
+
+      if (wantsTime) {
+        const factor = Math.exp(delta * 0.0016)
+        if (!Number.isFinite(factor) || factor === 1) return
+        setViewport((current) => zoomViewport(current ?? bounds, factor, anchorRatio(event.clientX - rect.left), bounds))
+        return
+      }
+
+      // Vertical zoom on the activity axis, about the baseline: bars keep their
+      // footing and grow, which is the only way this gesture can stay honest.
+      setActivityZoom((current) => {
+        const next = current * Math.exp(-delta * 0.0016)
+        return Math.min(ACTIVITY_MAX_ZOOM, Math.max(ACTIVITY_MIN_ZOOM, next))
+      })
     }
 
     element.addEventListener('wheel', onWheel, { passive: false })
@@ -1282,10 +1736,21 @@ export function CashflowChart({
         dragRef.current = null
       }
       if (drag?.moved) return
-      if (hover?.marker) onClickMarker?.(hover.marker.marker)
-      else if (hover?.candle) onClickBucket?.(hover.candle.bucket)
+      /*
+        A click means "this one".
+
+        In the activity panel the segment wins over the marker, because the segment is
+        what the reader aimed at; it carries the same transaction id, so the drawer that
+        opens is the same row either way.
+      */
+      if (crosshair?.segment && crosshair.segment.transactionId > 0) {
+        onClickSegment?.(crosshair.segment)
+        return
+      }
+      if (crosshair?.marker) onClickMarker?.(crosshair.marker.marker)
+      else if (crosshair?.candle) onClickBucket?.(crosshair.candle.bucket)
     },
-    [hover, onClickMarker, onClickBucket]
+    [crosshair, onClickSegment, onClickMarker, onClickBucket]
   )
 
   const clearHover = useCallback(() => {
@@ -1293,7 +1758,7 @@ export function CashflowChart({
     dragRef.current = null
   }, [])
 
-  const cursor = hover?.marker ? 'pointer' : 'crosshair'
+  const cursor = crosshair?.marker || crosshair?.segment ? 'pointer' : 'crosshair'
 
   return (
     <div className="cfc" ref={wrapRef}>
@@ -1312,9 +1777,11 @@ export function CashflowChart({
         >
           <canvas ref={balanceRef} className="cfc__canvas" />
           <span className="cfc__panel-title">{T.klineBalancePanel}</span>
-          {hover !== null && hover.panel === 'balance' && hover.value !== null ? (
-            <span className="cfc__axis-tag" style={{ top: hover.py, right: AXIS_W }}>
-              {formatMoney(hover.value, displayCurrency, { compact: true })}
+          {crosshair !== null && crosshair.panel === 'balance' && crosshair.value !== null ? (
+            /* Tagged at `crossY`, the value the horizontal line is actually on — the
+               two used to be drawn from different numbers. */
+            <span className="cfc__axis-tag" style={{ top: crosshair.crossY, right: AXIS_W }}>
+              {formatMoney(crosshair.value, displayCurrency, { compact: true })}
             </span>
           ) : null}
         </div>
@@ -1330,25 +1797,44 @@ export function CashflowChart({
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
           onPointerLeave={clearHover}
-          onDoubleClick={() => setViewport(null)}
+          onDoubleClick={() => setActivityZoom(1)}
         >
           <canvas ref={activityRef} className="cfc__canvas" />
           <span className="cfc__panel-title">
-            {activityMode === 'flow' ? T.klineActivityFlow : T.klineActivityCount}
+            {T.klineActivityPanel}
+            <span className="cfc__panel-mode">{ACTIVITY_MODE_LABEL[activityMode]}</span>
+            {/* Both windows, whenever the two sides are scaled separately: the one
+                piece of information a dual-scale chart must never hide. */}
+            {activity.split === 'perDirection' && (activity.income > 0 || activity.expense > 0) ? (
+              <span className="cfc__panel-scale num" title={T.klineActivitySplitHint}>
+                <span className="is-up">↑{formatMoney(activity.income, displayCurrency, { compact: true })}</span>
+                <span className="is-down">↓{formatMoney(activity.expense, displayCurrency, { compact: true })}</span>
+              </span>
+            ) : null}
+            {activity.zoom > 1.001 ? (
+              <span className="cfc__panel-zoom" title={T.klineActivityZoomHint}>
+                脳{activity.zoom < 10 ? activity.zoom.toFixed(1) : Math.round(activity.zoom)}
+              </span>
+            ) : null}
+            {activity.clipped ? (
+              <span className="cfc__panel-clip" title={T.klineActivityClipped}>
+                {T.klineActivityClippedShort}
+              </span>
+            ) : null}
           </span>
-          {hover !== null && hover.panel === 'activity' && hover.value !== null ? (
-            <span className="cfc__axis-tag" style={{ top: hover.py, right: AXIS_W }}>
-              {formatMoney(hover.value, displayCurrency, { compact: true })}
+          {crosshair !== null && crosshair.panel === 'activity' && crosshair.value !== null ? (
+            <span className="cfc__axis-tag" style={{ top: crosshair.crossY, right: AXIS_W }}>
+              {formatMoney(Math.abs(crosshair.value), displayCurrency, { compact: true })}
             </span>
           ) : null}
-          {hover !== null && hover.marker === null ? (
+          {crosshair !== null && crosshair.segment === null ? (
             <span
               className="cfc__time-tag"
-              style={{ left: Math.max(plotLeft + 30, Math.min(hover.crossX, plotRight - 30)), top: panels.axisTop }}
+              style={{ left: Math.max(plotLeft + 30, Math.min(crosshair.crossX, plotRight - 30)), top: panels.axisTop }}
             >
               {isIntradayGranularity(granularity)
-                ? `${keyOf(hover.instant)} ${toTimeKey(hover.instant)}`
-                : keyOf(hover.instant)}
+                ? `${crosshair.date} ${toTimeKey(crosshair.instant)}`
+                : crosshair.date}
             </span>
           ) : null}
         </div>
@@ -1402,16 +1888,22 @@ function drawValueGrid(
   }
 }
 
-/** The unified vertical crosshair. Drawn by BOTH panels at the same x. */
+/**
+ * The unified vertical crosshair. Drawn by BOTH panels at the same x.
+ *
+ * One function and one x is the point: the vertical line is a statement about a DATE,
+ * and a date is shared by the two panels. The colour differs so the reader can see
+ * which panel currently owns the crosshair, but the position never does.
+ */
 function drawVerticalCrosshair(
   ctx: CanvasRenderingContext2D,
   x: number,
   top: number,
   bottom: number,
-  palette: Palette
+  color: string
 ): void {
   ctx.save()
-  ctx.strokeStyle = palette.crosshair
+  ctx.strokeStyle = color
   ctx.globalAlpha = 0.55
   ctx.lineWidth = 1
   ctx.setLineDash([3, 3])
@@ -1420,6 +1912,65 @@ function drawVerticalCrosshair(
   ctx.lineTo(Math.round(x) + 0.5, bottom + 6)
   ctx.stroke()
   ctx.restore()
+}
+
+/** Panel captions for the five activity series. */
+const ACTIVITY_MODE_LABEL: Record<ActivityViewMode, string> = {
+  stack: T.klineActivityStack,
+  net: T.klineActivityNet,
+  incomeExpense: T.klineActivityIncomeExpense,
+  cumulative: T.klineActivityCumulative,
+  category: T.klineActivityCategory
+}
+
+/**
+ * The two-ladder grid for the composition modes.
+ *
+ * Each half is labelled with ITS OWN values, in its own colour, because the two halves
+ * are fitted separately. A reader who wants to compare an income bar with an expense bar
+ * is told by the numbers that the scales differ rather than being quietly misled into
+ * thinking a RM 200 dinner is the same size as a RM 12,000 salary.
+ */
+function drawSplitGrid(
+  ctx: CanvasRenderingContext2D,
+  scale: ActivityScale,
+  zeroY: number,
+  top: number,
+  bottom: number,
+  left: number,
+  right: number,
+  palette: Palette,
+  currency: string,
+  font: string
+): void {
+  ctx.font = `10px ${font}`
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+
+  const half = (window_: number, from: number, to: number, color: string): void => {
+    if (window_ <= 0 || to <= from) return
+    const domain = valueDomain(0, window_, { minStep: 1, maxMajorTicks: 4, minMajorTicks: 2 })
+    for (const value of domain.ticks) {
+      if (value <= 0) continue
+      const ratio = value / window_
+      const y = Math.round(to - ratio * (to - from)) + 0.5
+      if (y < Math.min(from, to) - 1 || y > Math.max(from, to) + 1) continue
+      ctx.strokeStyle = palette.grid
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(left, y)
+      ctx.lineTo(right, y)
+      ctx.stroke()
+      ctx.globalAlpha = 0.85
+      ctx.fillStyle = color
+      ctx.fillText(formatMoney(value, currency, { compact: true }), right + 6, y)
+      ctx.globalAlpha = 1
+    }
+  }
+
+  // Income above the baseline, expense below it: the same convention as the bars.
+  half(scale.income, top, zeroY, palette.up)
+  half(scale.expense, bottom, zeroY, palette.down)
 }
 
 /** Repaint when the theme changes: the palette is read from CSS at draw time. */
@@ -1444,16 +1995,32 @@ const CHART_STYLES = `
   position: relative; width: 100%; min-width: 0; overflow: hidden;
   touch-action: none; user-select: none; cursor: crosshair;
 }
-.cfc__panel--balance { flex: 0 0 auto; min-height: 150px; }
-.cfc__panel--activity { flex: 1 1 auto; min-height: 110px; }
+.cfc__panel--balance { flex: 0 0 auto; min-height: 190px; }
+.cfc__panel--activity { flex: 1 1 auto; min-height: 170px; }
 .cfc__divider { height: 1px; flex: 0 0 1px; background-color: var(--border-subtle); }
 .cfc__canvas { display: block; }
 /* Panel captions sit in the top-left corner of each plot, the way a terminal labels
    its panes. Decorative, so they never intercept the pointer. */
 .cfc__panel-title {
   position: absolute; left: 10px; top: 3px; pointer-events: none;
+  display: inline-flex; align-items: center; gap: 6px;
   font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase;
   color: var(--text-tertiary);
+}
+/* Which series the activity panel is drawing, and how far its value axis is zoomed. */
+.cfc__panel-mode { color: var(--accent-text); letter-spacing: 0.04em; }
+/* The two windows, when the up and down sides are scaled separately. */
+.cfc__panel-scale { display: inline-flex; gap: 6px; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.cfc__panel-scale .is-up { color: var(--market-up); }
+.cfc__panel-scale .is-down { color: var(--market-down); }
+.cfc__panel-zoom {
+  font-variant-numeric: tabular-nums; letter-spacing: 0;
+  color: var(--warning); background-color: var(--warning-subtle);
+  border-radius: var(--radius-full); padding: 0 5px;
+}
+.cfc__panel-clip {
+  letter-spacing: 0; color: var(--warning);
+  border: 1px solid var(--warning); border-radius: var(--radius-full); padding: 0 5px;
 }
 .cfc__axis-tag {
   position: absolute; transform: translateY(-50%);

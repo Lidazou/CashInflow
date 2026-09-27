@@ -138,6 +138,7 @@ export const IPC_CHANNELS = {
   importBatches: 'import:batches',
   importRollback: 'import:rollback',
   exportCsv: 'export:csv',
+  exportXlsx: 'export:xlsx',
 
   // --- backup ------------------------------------------------------------
   backupCreate: 'backup:create',
@@ -313,6 +314,14 @@ export interface IpcContract {
   [IPC_CHANNELS.importRollback]: { args: [batchId: number]; result: { deleted: number } }
 
   [IPC_CHANNELS.exportCsv]: { args: [query: TransactionQuery]; result: { canceled: boolean; path: string | null; rows: number } }
+  /**
+   * Export the CURRENT filter as a real .xlsx (v1.6.0).
+   *
+   * Same query type as the CSV export on purpose: the filters the transaction list is
+   * showing are the filters that reach the file, and there is no second query builder to
+   * drift from the visible one.
+   */
+  [IPC_CHANNELS.exportXlsx]: { args: [query: TransactionQuery]; result: { canceled: boolean; path: string | null; rows: number } }
 
   [IPC_CHANNELS.backupCreate]: { args: []; result: { canceled: boolean; backup: BackupInfo | null } }
   [IPC_CHANNELS.backupRestore]: { args: []; result: { canceled: boolean; restore: RestoreResult | null } }
@@ -458,6 +467,8 @@ export interface CashInflowApi {
   importBatches: () => Promise<ImportBatch[]>
   importRollback: (batchId: number) => Promise<{ deleted: number }>
   exportCsv: (query: TransactionQuery) => Promise<{ canceled: boolean; path: string | null; rows: number }>
+  /** Export the current filter as a real .xlsx, with dates and numbers as dates and numbers. */
+  exportXlsx: (query: TransactionQuery) => Promise<{ canceled: boolean; path: string | null; rows: number }>
 
   // --- backup ------------------------------------------------------------
   backupCreate: () => Promise<{ canceled: boolean; backup: BackupInfo | null }>

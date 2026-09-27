@@ -64,6 +64,25 @@ export interface Donut3DSegment {
   currency?: string
   /** Optional transaction count, offered to assistive tech. */
   count?: number
+  /**
+   * The category's id, when the slice came from one (v1.6.0).
+   *
+   * Carried so a click can open the real category — the transaction list filtered to
+   * those rows — instead of a look-alike detail view keyed on a display NAME. A name is
+   * a label the user can change and two categories can share across types; the id is the
+   * thing every other screen already filters by.
+   */
+  categoryId?: number | null
+}
+
+/** What the hover card needs, gathered in one place. */
+export interface Donut3DHover {
+  label: string
+  value: number
+  percent: number
+  count?: number
+  color: string
+  currency?: string
 }
 
 export interface Donut3DProps {
@@ -113,6 +132,18 @@ export interface Donut3DProps {
    * Turning it off leaves the ring fully clickable but visually static.
    */
   interactive?: boolean
+  /**
+   * Show a card next to the ring while a slice is hovered (v1.6.0).
+   *
+   * Hovering used to lift a slice and dim the others, which says WHICH one you are on
+   * but not what it is worth — so the reader had to move to the legend and match colours
+   * by eye. The card prints the three things a ring can never say on its own: the name,
+   * the amount and the share. Defaults to true; the card only appears when `interactive`
+   * is on, because a static ring that pops up a card is a contradiction.
+   */
+  showHoverCard?: boolean
+  /** Called with the hovered slice (or null), for a caller that wants to mirror it. */
+  onSegmentHover?: (segment: Donut3DSegment | null, index: number | null) => void
 }
 
 /* ------------------------------------------------------------------------- */
@@ -256,6 +287,35 @@ const DONUT3D_STYLES = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* ---- the hover card (v1.6.0) ----
+   Over the ring's top-right corner, where it covers the least of the slice being
+   asked about. Compact on purpose: name, amount, share, count, and how to open it. */
+.donut3d__hover {
+  position: absolute; top: 4px; right: -6px; z-index: 3;
+  display: flex; flex-direction: column; gap: 1px; min-width: 132px; max-width: 210px;
+  padding: 7px 10px; border-radius: var(--radius-md);
+  background-color: var(--bg-surface-raised);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-md);
+  pointer-events: none; text-align: left;
+  animation: donut3d-hover var(--duration-fast) var(--ease-out);
+}
+@keyframes donut3d-hover {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .donut3d__hover { animation: none; }
+}
+.donut3d__hover-name {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--text-xs); color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.donut3d__hover-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.donut3d__hover-value { font-size: var(--text-base); color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.donut3d__hover-meta { font-size: var(--text-2xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.donut3d__hover-hint { font-size: var(--text-2xs); color: var(--accent-text); margin-top: 2px; }
 /* The footnote is the one line in the slot that carries a live account figure,
    so it gets a subtle rule above it to separate it from the period metadata.
    It is deliberately the SAME colour and size as the hint: bolding it competed
@@ -314,7 +374,9 @@ export function Donut3D({
   footnoteSize,
   currency,
   onSegmentClick,
-  interactive = true
+  interactive = true,
+  showHoverCard = true,
+  onSegmentHover
 }: Donut3DProps): JSX.Element {
   // Two donuts on one page must not share a gradient or filter id. useId() emits
   // characters that are not valid in a url(#…) fragment, so keep alphanumerics.
@@ -445,6 +507,9 @@ export function Donut3D({
 
   const ariaLabel = hasValue ? `${centerLabel}，${description}` : description
 
+  /** The hovered slice, resolved once and used by the card and the a11y text. */
+  const hovered = interactive && highlighted !== null ? (arcs.find((arc) => arc.index === highlighted) ?? null) : null
+
   /* ---- layers ---------------------------------------------------------- */
   const baseRing = hasData ? (
     arcs.map((arc) => (
@@ -474,7 +539,7 @@ export function Donut3D({
   )
 
   return (
-    <div className="donut3d" style={{ width: dim }}>
+    <div className="donut3d" style={{ width: dim, position: 'relative' }}>
       <style>{DONUT3D_STYLES}</style>
       <svg
         className="donut3d__svg"
@@ -553,10 +618,38 @@ export function Donut3D({
                 role={clickable ? 'button' : undefined}
                 tabIndex={clickable ? 0 : undefined}
                 aria-label={clickable ? `${arc.segment.label} ${money(arc.value, arc.segment)}` : undefined}
-                onMouseEnter={interactive ? () => setHighlighted(arc.index) : undefined}
-                onMouseLeave={interactive ? () => setHighlighted(null) : undefined}
-                onFocus={interactive ? () => setHighlighted(arc.index) : undefined}
-                onBlur={interactive ? () => setHighlighted(null) : undefined}
+                onMouseEnter={
+                  interactive
+                    ? () => {
+                        setHighlighted(arc.index)
+                        onSegmentHover?.(arc.segment, arc.index)
+                      }
+                    : undefined
+                }
+                onMouseLeave={
+                  interactive
+                    ? () => {
+                        setHighlighted(null)
+                        onSegmentHover?.(null, null)
+                      }
+                    : undefined
+                }
+                onFocus={
+                  interactive
+                    ? () => {
+                        setHighlighted(arc.index)
+                        onSegmentHover?.(arc.segment, arc.index)
+                      }
+                    : undefined
+                }
+                onBlur={
+                  interactive
+                    ? () => {
+                        setHighlighted(null)
+                        onSegmentHover?.(null, null)
+                      }
+                    : undefined
+                }
                 onClick={clickable ? () => onSegmentClick?.(arc.segment, arc.index) : undefined}
                 onKeyDown={
                   clickable
@@ -635,6 +728,35 @@ export function Donut3D({
           </div>
         </foreignObject>
       </svg>
+
+      {/*
+        The hover card (v1.6.0).
+
+        Positioned over the ring's top-right rather than following the pointer: a ring is
+        a small target and a card that chases the cursor covers the very slice being
+        asked about. HTML rather than SVG text because it is a three-line table that
+        should inherit the theme's type scale and tokens.
+
+        The three facts are the ones a ring cannot state by itself — name, amount, share —
+        plus the transaction count when the caller knows it (spec §23, §27). Colour is
+        never the only channel.
+      */}
+      {interactive && showHoverCard && hovered !== null ? (
+        <div className="donut3d__hover" role="status" data-segment-index={hovered.index}>
+          <span className="donut3d__hover-name">
+            <i className="donut3d__hover-dot" style={{ backgroundColor: hovered.segment.color }} />
+            {hovered.segment.label}
+          </span>
+          <b className="donut3d__hover-value num">{money(hovered.value, hovered.segment)}</b>
+          <span className="donut3d__hover-meta num">
+            {hovered.percent}%
+            {typeof hovered.segment.count === 'number' && Number.isFinite(hovered.segment.count)
+              ? ` · ${Math.trunc(hovered.segment.count)} 笔`
+              : ''}
+          </span>
+          {clickable ? <span className="donut3d__hover-hint">{T.donutClickHint}</span> : null}
+        </div>
+      ) : null}
     </div>
   )
 }

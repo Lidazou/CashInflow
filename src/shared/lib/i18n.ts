@@ -291,6 +291,37 @@ export const T = {
   klineBalancePanel: '余额 K 线',
   klineActivityFlow: '现金活动 · 收入 / 支出',
   klineActivityCount: '现金活动 · 交易笔数',
+
+  // Daily Cash Activity panel (v1.6.0). One column per day, transactions stacked.
+  klineActivityPanel: '每日资金活动',
+  klineActivityStack: '交易堆叠',
+  klineActivityNet: '净现金流',
+  klineActivityIncomeExpense: '收入 vs 支出',
+  klineActivityCumulative: '累计净流',
+  klineActivityCategory: '分类活动',
+  klineActivityViewLabel: '副图',
+  klineActivityZoomLabel: '副图纵向',
+  klineActivityZoomIn: '放大副图纵轴',
+  klineActivityZoomOut: '缩小副图纵轴',
+  klineActivityZoomReset: '副图纵轴复位',
+  klineActivityZoomHint: '在副图上滚动即可放大纵轴；按住 Ctrl 滚动则缩放时间轴',
+  klineActivityClipped: '有柱子超出当前纵轴范围，被截断显示。放大纵轴或用 Ctrl 滚轮缩小时间范围即可看到全部。',
+  klineActivityClippedShort: '已截断',
+  klineActivitySplitHint:
+    '上方柱体按收入最大值定标，下方柱体按支出最大值定标：两侧刻度不同，所以 RM200 的支出不会被 RM12000 的收入压成一条线。具体金额请看提示框。',
+  klineActivityLegend: '下方柱体：一天一根，按金额比例堆叠当天每一笔交易',
+  klineActivityLegendCategory: '下方柱体：一天一根，按分类汇总当天金额',
+  klineActivityShare: '占当日 {kind} 的 {pct}',
+  klineActivityRange: '区间 {from} → {to}',
+  klineActivityRangeLabel: '堆叠区间',
+  klineActivityIndex: '第 {index} / {count} 笔',
+  klineActivityDayTotal: '当日支出',
+  klineActivityDayIncome: '当日收入',
+  klineActivityTxCount: '当日 {n} 笔（含转账 {transfers} 笔）',
+  klineActivityEmptyDay: '这一天没有收入或支出',
+  klineActivityNoSegments: '这段时间没有可堆叠的交易记录',
+  klineTooltipShare: '占比',
+
   /** Hover card titles. */
   klineTooltipCandle: 'K 线',
   klineTooltipTransaction: '交易',
@@ -305,9 +336,27 @@ export const T = {
   klineTooltipBalanceBefore: '交易前余额',
   klineTooltipBalanceAfter: '交易后余额',
   klineTooltipTimeUnknown: '时间未记录',
+  /** Shown on an activity segment whose currency had no rate: the amount is its own. */
+  klineUnconverted: '无汇率，按原币种显示',
   klineZoomHint: '滚轮缩放（以鼠标位置为中心）· 拖动平移 · 双击显示全部',
   /** Shown when the reader zooms in far enough that the day would need splitting. */
   klineNoTimeNotice: '这些记录没有交易时间，最细只能看到「日」。',
+
+  // Donut interaction (v1.6.0)
+  donutClickHint: '点击查看这个分类的交易',
+  donutTxCount: '{n} 笔',
+
+  // Excel export (v1.6.0)
+  txpExportExcel: '导出 Excel（{n} 笔）',
+  txpExporting: '正在导出…',
+  txpExportHint: '把当前筛选结果导出为 .xlsx：日期、时间、交易、分类、类型、金额、账户、备注',
+  txpExported: '已导出 {n} 笔交易',
+  txpExportCanceled: '已取消导出。',
+  txpExportFailed: '导出失败',
+  txpExportFailedHint: '没有生成文件。请检查目标文件夹是否可写，或换一个位置再试。',
+  txpIncomingFrom: '来自总览的筛选：',
+  txpIncomingCategory: '分类',
+  txpIncomingClear: '清除筛选',
 
   // Empty and error
   noData: '暂无数据',

@@ -147,6 +147,7 @@ const api = {
   importBatches: () => invoke(IPC_CHANNELS.importBatches),
   importRollback: (batchId: number) => invoke(IPC_CHANNELS.importRollback, batchId),
   exportCsv: (query: unknown) => invoke(IPC_CHANNELS.exportCsv, query),
+  exportXlsx: (query: unknown) => invoke(IPC_CHANNELS.exportXlsx, query),
 
   // --- backup ------------------------------------------------------------
   backupCreate: () => invoke(IPC_CHANNELS.backupCreate),

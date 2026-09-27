@@ -742,6 +742,7 @@ export interface CashflowTransactionMarker {
   balanceBefore: number | null
   balanceAfter: number | null
   merchant: string | null
+  categoryId: number | null
   categoryName: string | null
   categoryColor: string | null
   accountName: string

@@ -885,7 +885,7 @@ export class KlineService {
       .prepare(
         `SELECT t.id AS id, t.date AS date, t.time AS time, t.type AS type, t.amount AS amount,
                 a.currency AS currency, a.name AS account_name,
-                c.name AS category_name, c.color AS category_color,
+                t.category_id AS category_id, c.name AS category_name, c.color AS category_color,
                 t.merchant AS merchant, t.note AS note
          FROM transactions t
          JOIN accounts a ON a.id = t.account_id
@@ -902,6 +902,7 @@ export class KlineService {
       amount: number
       currency: string
       account_name: string
+      category_id: number | null
       category_name: string | null
       category_color: string | null
       merchant: string | null
@@ -1048,6 +1049,7 @@ export class KlineService {
         balanceBefore: signed === null ? null : running,
         balanceAfter: after,
         merchant: row.merchant,
+        categoryId: row.category_id,
         categoryName: row.category_name,
         categoryColor: row.category_color,
         accountName: row.account_name,

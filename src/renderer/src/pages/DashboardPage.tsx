@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { Icon, iconNameOr } from '@renderer/components/Icon'
 import type { IconName } from '@renderer/components/Icon'
@@ -23,6 +23,7 @@ import {
   periodProgressZh
 } from '@shared/lib/i18n'
 import { today } from '@shared/lib/dates'
+import { categoryColorFor } from '@shared/lib/category-colors'
 import {
   CUSTOM_RANGE_PRESETS,
   customRangeLabel,
@@ -86,6 +87,7 @@ export default function DashboardPage(): JSX.Element {
   const openEditTransaction = useUiStore((state) => state.openEditTransaction)
   const openEditTransfer = useUiStore((state) => state.openEditTransfer)
   const { run, pending } = useAction()
+  const navigate = useNavigate()
 
   const loadRates = useRateStore((state) => state.load)
 
@@ -297,11 +299,14 @@ export default function DashboardPage(): JSX.Element {
   const categories = breakdownState.data?.categories ?? []
   const segments: Donut3DSegment[] = categories
     .filter((row) => row.total > 0)
-    .map((row, index) => ({
+    .map((row) => ({
       label: categoryLabel(row.categoryName),
       value: row.total,
-      color: row.categoryColor ?? `var(--chart-${(index % 8) + 1})`,
-      count: row.transactionCount
+      // One colour source for the whole app (v1.6.0): the token table, which also
+      // upgrades a category still carrying one of the pre-1.6 default colours.
+      color: categoryColorFor(row.categoryName, row.categoryColor),
+      count: row.transactionCount,
+      categoryId: row.categoryId
     }))
 
   const biggest = biggestState.data
@@ -482,6 +487,20 @@ export default function DashboardPage(): JSX.Element {
                 }
                 footnoteSize={14}
                 currency={displayCurrency}
+                /*
+                  Clicking a slice opens the EXISTING transaction list, filtered to that
+                  category and to the period this ring is showing (spec §24).
+
+                  Deliberately not a category-detail screen of its own: the list already
+                  has the category filter, the date range, the edit entry points and the
+                  export button, and a second view of the same rows would drift from it.
+                */
+                onSegmentClick={(segment) => {
+                  if (segment.categoryId === null || segment.categoryId === undefined) return
+                  navigate(
+                    `/transactions?categoryId=${segment.categoryId}&from=${shown.start}&to=${shown.end}`
+                  )
+                }}
               />
             </div>
 
@@ -1046,7 +1065,7 @@ function TodayTransactionRow({
   onEdit: (row: TransactionWithRefs) => void
   onEditTransfer: (row: TransactionWithRefs) => void
 }): JSX.Element {
-  const color = row.categoryColor ?? 'var(--text-tertiary)'
+  const color = categoryColorFor(row.categoryName, row.categoryColor)
   return (
     <li className="sw-dash__txn">
       <button

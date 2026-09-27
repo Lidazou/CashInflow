@@ -1042,3 +1042,59 @@ export function describeSpan(spanMs: number): string {
   const minutes = Math.max(1, Math.round(spanMs / 60_000))
   return `${minutes}分钟`
 }
+
+/* -------------------------------------------------------------------------- */
+/* the visible slice                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The items intersecting a viewport, in order — the FIRST one, not any one.
+ *
+ * THE BUG THIS REPLACES (found while building v1.6.0, present since v1.5.1)
+ * ----------------------------------------------------------------------
+ * The chart used to search for the first visible bucket with a loop that `break`s the
+ * moment it lands on ANY bucket inside the window:
+ *
+ *     while (lo <= hi) {
+ *       const mid = (lo + hi) >> 1
+ *       if (next <= from) lo = mid + 1
+ *       else if (buckets[mid].instant > to) hi = mid - 1
+ *       else { start = mid; break }        // ← any bucket, usually the middle one
+ *       start = Math.max(0, lo)
+ *     }
+ *
+ * With the whole history in view that returns the MIDDLE bucket, so a two-year ledger
+ * was drawn from its one-year mark onwards and a nine-day ledger from its fifth day.
+ * Nobody noticed because "the chart starts somewhere in the past" looks exactly like a
+ * chart, and the older half was simply missing.
+ *
+ * The rule is a lower bound on `end`: the first item whose END is past the window's
+ * start is the first one that intersects it. `end` is the next item's instant — buckets
+ * are half-open, [instant, next) — and `dataEnd` for the last one, because an
+ * open-ended final bucket would otherwise "intersect" every window in the future and a
+ * chart scrolled past the end of the ledger would still draw its last candle.
+ */
+export function visibleRange<T extends { instant: number }>(
+  items: readonly T[],
+  viewport: Viewport,
+  dataEnd: number = Number.POSITIVE_INFINITY
+): T[] {
+  if (items.length === 0) return []
+
+  let lo = 0
+  let hi = items.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    const end = mid + 1 < items.length ? items[mid + 1].instant : dataEnd
+    if (end <= viewport.from) lo = mid + 1
+    else hi = mid
+  }
+
+  const out: T[] = []
+  for (let i = lo; i < items.length; i += 1) {
+    // The viewport is half-open, so an item starting exactly at `to` is out of it.
+    if (items[i].instant >= viewport.to) break
+    out.push(items[i])
+  }
+  return out
+}

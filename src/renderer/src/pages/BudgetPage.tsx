@@ -10,6 +10,7 @@ import { T, categoryLabel, monthKeyLabelZh } from '@shared/lib/i18n'
 import { formatMinorToPlain, parseAmountToMinor } from '@shared/lib/money'
 import { cycleFor } from '@shared/lib/periods'
 import type { BudgetProgress, Category, CycleInfo } from '@shared/types'
+import { categoryColorFor } from '@shared/lib/category-colors'
 
 /**
  * Monthly budgets (spec §22).
@@ -448,7 +449,7 @@ export default function BudgetPage(): React.JSX.Element {
                 <li className="bud__row" key={row.budget.id}>
                   <span
                     className="bud__icon"
-                    style={{ color: row.categoryColor ?? 'var(--text-secondary)' }}
+                    style={{ color: categoryColorFor(row.categoryName, row.categoryColor) }}
                     aria-hidden="true"
                   >
                     <Icon name={iconNameOr(row.categoryIcon, 'tag')} size={16} />
@@ -495,7 +496,7 @@ export default function BudgetPage(): React.JSX.Element {
                     <ProgressBar
                       value={row.spent}
                       max={row.budget.limitAmount}
-                      color={row.overBudget ? 'var(--warning)' : (row.categoryColor ?? 'var(--accent)')}
+                      color={row.overBudget ? 'var(--warning)' : categoryColorFor(row.categoryName, row.categoryColor)}
                       height={8}
                       showOverflow
                       aria-label={T.budRowAria.replace('{label}', label).replace('{period}', cycleLabelText)}
