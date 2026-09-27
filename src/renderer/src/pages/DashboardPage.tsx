@@ -6,7 +6,8 @@ import { Icon, iconNameOr } from '@renderer/components/Icon'
 import type { IconName } from '@renderer/components/Icon'
 import { Donut3D } from '@renderer/components/Donut3D'
 import type { Donut3DSegment } from '@renderer/components/Donut3D'
-import { BalanceFlowChart } from '@renderer/components/BalanceFlowChart'
+import { KlinePanel, DEFAULT_KLINE_SETTINGS } from '@renderer/components/KlinePanel'
+import type { KlineSettings } from '@renderer/components/KlinePanel'
 import { CurrencyBar } from '@renderer/components/CurrencyBar'
 import { Money, ConversionNote } from '@renderer/components/Money'
 import { useAction, useAsync } from '@renderer/hooks/useData'
@@ -95,6 +96,16 @@ export default function DashboardPage(): JSX.Element {
     () => dashboardRange ?? { from: CUSTOM_RANGE_PRESETS[1].build().from, to: today() }
   )
   const [rangeError, setRangeError] = useState<string | null>(null)
+
+  /**
+   * K-line view preferences.
+   *
+   * Component state rather than a persisted setting: which candle size you last
+   * looked at is a passing question ("what did last month look like"), not a
+   * preference worth carrying across launches. The donut/K线 choice IS persisted,
+   * because that one is about how the user thinks about their money.
+   */
+  const [klineSettings, setKlineSettings] = useState<KlineSettings>(DEFAULT_KLINE_SETTINGS)
 
   const viewMode = dashboardViewMode
 
@@ -388,6 +399,8 @@ export default function DashboardPage(): JSX.Element {
                 loading={klineState.loading}
                 error={klineState.error}
                 displayCurrency={displayCurrency}
+                settings={klineSettings}
+                onSettings={(patch) => setKlineSettings((current) => ({ ...current, ...patch }))}
                 onRetry={klineState.reload}
               />
             ) : (
@@ -686,55 +699,6 @@ export default function DashboardPage(): JSX.Element {
  * that has to render its own "no data" message ends up with a second, worse empty
  * state than the rest of the app.
  */
-function KlinePanel({
-  series,
-  loading,
-  error,
-  displayCurrency,
-  onRetry
-}: {
-  series: KlineSeries | null
-  loading: boolean
-  error: string | null
-  displayCurrency: string
-  onRetry: () => void
-}): JSX.Element {
-  if (error && !series) {
-    return (
-      <div className="sw-dash__inline-error" role="alert">
-        <p className="muted">资金走势加载失败：{error}</p>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={onRetry}>
-          <Icon name="refresh" size={14} />
-          {T.retry}
-        </button>
-      </div>
-    )
-  }
-
-  if (!series) {
-    return loading ? <ListSkeleton rows={5} /> : <ListSkeleton rows={5} />
-  }
-
-  if (series.points.length === 0 || series.daily.length === 0) {
-    return (
-      <div className="empty-state sw-dash__empty">
-        <p>还没有可绘制的记录。记上几笔之后，这里会显示资金走势。</p>
-      </div>
-    )
-  }
-
-  return (
-    <>
-      <BalanceFlowChart series={series} displayCurrency={displayCurrency} height={430} />
-      {series.hasUnconverted ? (
-        <p className="muted sw-dash__klinenote">
-          有币种缺少汇率，这部分金额未计入曲线。在设置里刷新汇率后即可完整显示。
-        </p>
-      ) : null}
-    </>
-  )
-}
-
 /** The three-way period selector above the donut. */
 function ModeToggle({
   mode,
@@ -1167,7 +1131,7 @@ const DASHBOARD_STYLES = `
    grid-template-columns is not animatable on its own, so the tracks are pinned to
    explicit percentages only while expanding: the browser then has two definite
    values to interpolate between. The canvas inside redraws on every frame because
-   BalanceFlowChart observes its own width with a ResizeObserver, so the chart is
+   CashflowChart observes its own width with a ResizeObserver, so the chart is
    crisp at every intermediate size rather than only at the end.
 
    The two list cards move down on their own, as the second grid row — no

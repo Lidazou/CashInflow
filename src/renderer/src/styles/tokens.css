@@ -89,9 +89,24 @@
   --market-up-soft: rgba(22, 199, 132, 0.22);
   --market-down: #F0616D;
   --market-down-soft: rgba(240, 97, 109, 0.22);
+  /* A candle whose balance ended exactly where it started. Distinct from both
+     directions so a flat day is neither celebrated nor mourned. */
+  --market-neutral: #8A8A93;
   --market-grid: #1A1A1E;
   --market-axis: #6E6E77;
   --market-crosshair: #8A8A93;
+  /*
+    Transaction markers, drawn as cuts through a candle body.
+
+    Translucent rather than a solid colour so a dozen of them on a busy day read as a
+    texture instead of a barcode, and so the body's direction still shows through.
+    `--market-marker-hover` is opaque because the hovered marker is the answer to
+    "which transaction is this", and that has to be unambiguous.
+  */
+  --market-marker: rgba(255, 255, 255, 0.32);
+  --market-marker-hover: #F0B90B;
+  /** Bar colour for the activity sub-chart when it is showing transaction counts. */
+  --market-activity: #4E9CF5;
   --market-ma-1: #F0B90B;
   --market-ma-2: #4E9CF5;
   --market-ma-3: #C77FA8;
@@ -232,6 +247,12 @@
   --market-grid: #EFF0F4;
   --market-axis: #8A8F99;
   --market-crosshair: #5C6069;
+  --market-neutral: #8A8F99;
+  /* Darker than the dark theme's, because a translucent white cut is invisible on a
+     white candle. */
+  --market-marker: rgba(16, 17, 20, 0.30);
+  --market-marker-hover: #B57F09;
+  --market-activity: #2E6FD9;
   --market-ma-1: #B57F09;
   --market-ma-2: #2E6FD9;
   --market-ma-3: #B85A92;

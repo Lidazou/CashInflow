@@ -2,7 +2,14 @@ import type { Database as SqliteDatabase } from 'better-sqlite3'
 import { lookupRate, type RateTable } from '@shared/lib/rates'
 import { minorUnitScale } from '@shared/lib/money'
 import { addDays, addMonths, isoWeekKey, startOfMonth, startOfWeek, type DateString } from '@shared/lib/dates'
-import type { KlineDaily, KlineGranularity, KlinePoint, KlineSeries, KlineTransaction } from '@shared/types'
+import type {
+  CashflowTransactionMarker,
+  KlineDaily,
+  KlineGranularity,
+  KlinePoint,
+  KlineSeries,
+  KlineTransaction
+} from '@shared/types'
 
 /**
  * K-line (candlestick) balance history.
@@ -543,7 +550,14 @@ export class KlineService {
       bucketKeys.push(key)
     }
 
-    const tooltips = this.readTooltipTransactions(resolved, firstKey, lastDate, currency, rateOf)
+    const { transactions: tooltips, markers, dayExtremes } = this.readTooltipTransactions(
+      resolved,
+      firstKey,
+      lastDate,
+      currency,
+      rateOf,
+      openingBalance
+    )
 
     const points: KlinePoint[] = []
     let cursor = 0
@@ -606,6 +620,25 @@ export class KlineService {
       if (carry < low) low = carry
       const close = carry
 
+      /*
+        Fold the INTRADAY extremes in.
+
+        The walk above only ever sees end-of-day balances, so without this step a
+        candle whose salary arrived at 09:00 and was spent by 20:00 would report
+        High = max(open, close) and Low = min(open, close) — hiding the peak the chart
+        exists to show and making the day look like it barely moved.
+
+        A bucket's true range is the highest and lowest balance the accounts held at
+        any point inside it, which is the finest granularity the data has: each day's
+        own extremes, themselves derived from the balance after every transaction.
+      */
+      for (let d = key; d < nextKey; d = addDays(d, 1)) {
+        const extreme = dayExtremes.get(d)
+        if (!extreme) continue
+        if (extreme.high > high) high = extreme.high
+        if (extreme.low < low) low = extreme.low
+      }
+
       const income = runningIncome - incomeAtStart
       const expense = runningExpense - expenseAtStart
       const hasUnconverted = balanceIncomplete || unconvertedInBucket
@@ -637,8 +670,19 @@ export class KlineService {
         hasUnconverted,
         ma: {},
         deltaBalance: close - open,
+        /*
+          Measured against THIS bucket's opening balance, not the series'.
+
+          The header shows "net change" next to the bucket the cursor is on, so the
+          denominator has to be where that bucket started — otherwise a day's ¥5 gain
+          would be reported as a fraction of the balance ten years ago and read as 0%.
+          Null when the bucket opened at nothing: "up 100% from zero" is not a number
+          anyone can act on.
+        */
+        changeRatio: open !== 0 ? (close - open) / open : null,
         sources,
-        transactions: tooltips.get(key) ?? []
+        transactions: tooltips.get(key) ?? [],
+        markers: markers.get(key) ?? []
       })
     }
 
@@ -658,16 +702,19 @@ export class KlineService {
       const close = entry ? entry.balanceAfter : dayOpen
       const income = entry ? entry.incomeRounded : 0
       const expense = entry ? entry.expenseRounded : 0
+      const dailyExtreme = dayExtremes.get(date)
 
       daily.push({
-        // A day is the finest internal period there is, so its wick has nowhere to
-        // go: high, low and close are the same number.
+        // The wick is the day's true intraday range, from the balance after each
+        // transaction. A day with a morning salary and an evening spend genuinely
+        // reaches higher than either its open or its close, and the candle has to say
+        // so — that peak is the whole reason to look at a candle chart of a balance.
         date,
         label: bucketLabel(date, 'day'),
         balanceOpen: dayOpen,
         balanceClose: close,
-        balanceHigh: close,
-        balanceLow: close,
+        balanceHigh: dailyExtreme ? Math.max(dailyExtreme.high, dayOpen, close) : Math.max(dayOpen, close),
+        balanceLow: dailyExtreme ? Math.min(dailyExtreme.low, dayOpen, close) : Math.min(dayOpen, close),
         // Zero on a day with no activity: the cumulative curve did not move, so
         // its first difference is zero. No special case, and no drift.
         income,
@@ -730,8 +777,21 @@ export class KlineService {
      * "no rate available" next to a CNY total that had been converted — two
      * answers to one question on the same tooltip.
      */
-    rateOf: (code: string) => number | null
-  ): Map<string, KlineTransaction[]> {
+    rateOf: (code: string) => number | null,
+    /**
+     * The converted total of every account before the first transaction in range.
+     *
+     * Passed in so the marker walk starts from the same number the candle's first
+     * Open is built from. Deriving it here instead would create a second definition
+     * of "opening balance", and the two would eventually disagree.
+     */
+    openingBalance: number
+  ): {
+    transactions: Map<string, KlineTransaction[]>
+    markers: Map<string, CashflowTransactionMarker[]>
+    /** True intraday balance extremes per day, from the marker walk. */
+    dayExtremes: Map<string, { high: number; low: number }>
+  } {
     const rows = this.db
       .prepare(
         `SELECT id, date, time, type, amount, currency, account_name, category_name, category_color, merchant, note
@@ -767,28 +827,76 @@ export class KlineService {
       note: string | null
     }>
 
+    /**
+     * Every entry that moves a balance, in ledger order, uncapped.
+     *
+     * SEPARATE FROM THE QUERY ABOVE, and it has to be:
+     *   - transfers are included, because a transfer leg moves the balance of its
+     *     own account even though it is not income or expense — leaving it out would
+     *     shift every later marker on that day by the transfer amount;
+     *   - `created_at` joins the sort key, so two entries at the same minute are
+     *     ordered the way they were entered rather than by a tie-break nobody can
+     *     observe;
+     *   - it is not capped. The cap on tooltip rows is a rendering decision; dropping
+     *     a marker is a correctness one.
+     */
+    const flowRows = this.db
+      .prepare(
+        `SELECT t.id AS id, t.date AS date, t.time AS time, t.type AS type, t.amount AS amount,
+                a.currency AS currency, a.name AS account_name,
+                c.name AS category_name, c.color AS category_color,
+                t.merchant AS merchant, t.note AS note
+         FROM transactions t
+         JOIN accounts a ON a.id = t.account_id
+         LEFT JOIN categories c ON c.id = t.category_id
+         WHERE t.type IN ('income','expense','transfer') AND a.archived = 0
+           AND t.date >= ? AND t.date <= ?
+         ORDER BY t.date ASC, COALESCE(t.time, '') ASC, t.created_at ASC, t.id ASC`
+      )
+      .all(from, to) as Array<{
+      id: number
+      date: string
+      time: string | null
+      type: string
+      amount: number
+      currency: string
+      account_name: string
+      category_name: string | null
+      category_color: string | null
+      merchant: string | null
+      note: string | null
+    }>
+
     const displayScale = minorUnitScale(displayCurrency)
     const conversion = new Map<string, number | null>()
+
+    const rateFor = (code: string): number | null => {
+      let rate = conversion.get(code)
+      if (rate === undefined) {
+        rate = rateOf(code)
+        conversion.set(code, rate)
+      }
+      return rate
+    }
+
+    const magnitudeMinor = (row: { amount: number; currency: string }): number => Math.abs(row.amount)
+    const toDisplay = (row: { amount: number; currency: string }): number | null => {
+      const rate = rateFor(row.currency)
+      if (rate === null) return null
+      return Math.round((magnitudeMinor(row) / minorUnitScale(row.currency)) * rate * displayScale)
+    }
 
     const byBucket = new Map<string, KlineTransaction[]>()
     for (const row of rows) {
       const key = bucketStart(row.date, granularity)
-      const magnitude = Math.abs(row.amount)
-
-      let rate = conversion.get(row.currency)
-      if (rate === undefined) {
-        rate = rateOf(row.currency)
-        conversion.set(row.currency, rate)
-      }
-
       const entry: KlineTransaction = {
         id: row.id,
         date: row.date,
         time: row.time,
         type: row.type === 'income' ? 'income' : 'expense',
-        amount: magnitude,
+        amount: magnitudeMinor(row),
         currency: row.currency,
-        convertedAmount: rate === null ? null : Math.round((magnitude / minorUnitScale(row.currency)) * rate * displayScale),
+        convertedAmount: toDisplay(row),
         categoryName: row.category_name,
         categoryColor: row.category_color,
         merchant: row.merchant,
@@ -801,6 +909,193 @@ export class KlineService {
       else byBucket.set(key, [entry])
     }
 
-    return byBucket
+    /**
+     * Position each entry on the balance curve.
+     *
+     * ANCHORED PER DAY, not accumulated across the whole range, and that is the
+     * important part. Two ways to place a marker were tried:
+     *
+     *   1. Convert each transaction and sum the results across the entire history.
+     *      Rejected: converting many small amounts and adding them drifts from
+     *      converting each account's balance, because every conversion rounds. Two
+     *      existing tests caught it — a bucket reported Low 8605 while its own days
+     *      reported 8604 — and the drift grows with the number of transactions, so the
+     *      markers would slowly slide off the candle they belong to.
+     *   2. Re-anchor at each day's true opening balance, then accumulate only WITHIN
+     *      that day.
+     *
+     * This is the second. The day's open and close come from the same per-account
+     * conversion the candle's own open and close use, so a day's first marker starts
+     * exactly on the candle's open and its last marker lands within one minor unit
+     * per leg of the close — a bounded error confined to one day, which cannot
+     * accumulate into a marker floating above or below its own candle.
+     */
+    const days = this.readDailyBalances(from, to, displayCurrency, rateOf)
+    const openByDay = new Map<string, number>()
+    for (const day of days) openByDay.set(day.date, day.balanceOpen)
+
+    const markers = new Map<string, CashflowTransactionMarker[]>()
+
+    /*
+      True daily extremes, accumulated in the same pass that positions the markers.
+
+      A day used to be the finest period the series modelled, so its wick had nowhere
+      to go and `balanceHigh === balanceLow === close`. Markers gave every day an
+      internal sequence, so that is no longer true: a salary at 09:00 and lunch at
+      12:00 make the day's high the salary peak rather than the close.
+
+      Computing it here — from the very numbers the markers are drawn at — keeps ONE
+      definition of a day's range, shared by the `points` wicks, the zoom-rebuilt
+      `daily` rows and the chart's `bucketDaily`. Deriving it twice is how a
+      zoomed-in candle ends up disagreeing with the candle it was built from.
+    */
+    const dayExtremes = new Map<string, { high: number; low: number }>()
+    let dayCursor = ''
+    let dayHigh = 0
+    let dayLow = 0
+
+    const closeDay = (): void => {
+      if (dayCursor === '') return
+      dayExtremes.set(dayCursor, { high: dayHigh, low: dayLow })
+    }
+
+    let running = openingBalance
+    let currentDay = ''
+
+    for (const row of flowRows) {
+      const key = bucketStart(row.date, granularity)
+
+      // Entering a new day: jump to that day's real opening balance rather than
+      // trusting the accumulated total, and start a fresh extreme range.
+      if (row.date !== currentDay) {
+        closeDay()
+        currentDay = row.date
+        const dayOpen = openByDay.get(row.date)
+        if (dayOpen !== undefined) running = dayOpen
+        dayCursor = row.date
+        dayHigh = running
+        dayLow = running
+      }
+
+      const delta = toDisplay(row)
+      const signed =
+        delta === null ? null : row.type === 'expense' ? -delta : row.type === 'income' ? delta : 0
+
+      const after = signed === null ? null : running + signed
+
+      const entry: CashflowTransactionMarker = {
+        transactionId: row.id,
+        time: row.time,
+        type: row.type === 'income' ? 'income' : row.type === 'expense' ? 'expense' : 'transfer',
+        amount: magnitudeMinor(row),
+        currency: row.currency,
+        convertedDelta: signed,
+        // Both are left null for an unconvertible entry rather than being pinned to
+        // the running total: a marker drawn where the money is not is worse than a
+        // marker that is simply absent.
+        balanceBefore: signed === null ? null : running,
+        balanceAfter: after,
+        merchant: row.merchant,
+        categoryName: row.category_name,
+        categoryColor: row.category_color,
+        accountName: row.account_name,
+        note: row.note
+      }
+
+      const bucket = markers.get(key)
+      if (bucket) bucket.push(entry)
+      else markers.set(key, [entry])
+
+      if (after !== null) {
+        if (after > dayHigh) dayHigh = after
+        if (after < dayLow) dayLow = after
+        running = after
+      }
+    }
+    closeDay()
+
+    return { transactions: byBucket, markers, dayExtremes }
+  }
+
+  /**
+   * Per-day opening and closing balances, converted, for the marker anchors.
+   *
+   * A narrow read of the same thing the main series walk builds, kept separate
+   * because the marker walk needs one number per day and must not depend on the
+   * bucketing that walk is doing at the same time.
+   */
+  private readDailyBalances(
+    from: DateString,
+    to: DateString,
+    displayCurrency: string,
+    rateOf: (code: string) => number | null
+  ): Array<{ date: string; balanceOpen: number; balanceClose: number }> {
+    /*
+      `SUM(t.amount)` and nothing cleverer.
+
+      Amounts are stored SIGNED — an expense row holds a negative minor-unit value —
+      which is exactly how the main series walk reads them. Writing the sign into this
+      query instead (`CASE WHEN type = 'expense' THEN -amount`) double-negates every
+      expense; that bug flipped the entire balance curve and was caught only because a
+      debug run printed a marker balance of +549 where the answer was -549.
+    */
+    const rows = this.db
+      .prepare(
+        `SELECT t.date AS date, a.currency AS currency, a.id AS account_id,
+                COALESCE(SUM(t.amount), 0) AS delta
+         FROM transactions t
+         JOIN accounts a ON a.id = t.account_id
+         WHERE a.archived = 0 AND t.date >= ? AND t.date <= ?
+         GROUP BY t.date, a.id
+         ORDER BY t.date ASC`
+      )
+      .all(from, to) as Array<{ date: string; currency: string; account_id: number; delta: number }>
+
+    const displayScale = minorUnitScale(displayCurrency)
+    const byDay = new Map<string, number>()
+    for (const row of rows) {
+      const rate = rateOf(row.currency)
+      if (rate === null) continue
+      const converted = Math.round((row.delta / minorUnitScale(row.currency)) * rate * displayScale)
+      byDay.set(row.date, (byDay.get(row.date) ?? 0) + converted)
+    }
+
+    const days: Array<{ date: string; balanceOpen: number; balanceClose: number }> = []
+    let balance = this.openingBalanceIn(from, displayCurrency, rateOf)
+    for (const [date, delta] of [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const open = balance
+      balance += delta
+      days.push({ date, balanceOpen: open, balanceClose: balance })
+    }
+    return days
+  }
+
+  /** Converted total of every account before `from`. */
+  private openingBalanceIn(
+    from: DateString,
+    displayCurrency: string,
+    rateOf: (code: string) => number | null
+  ): number {
+    // Signed sum, matching the ledger and the series walk — see readDailyBalances.
+    const rows = this.db
+      .prepare(
+        `SELECT a.currency AS currency, a.opening_balance AS opening_balance,
+                COALESCE(SUM(t.amount), 0) AS delta
+         FROM accounts a
+         LEFT JOIN transactions t ON t.account_id = a.id AND t.date < ?
+         WHERE a.archived = 0
+         GROUP BY a.id`
+      )
+      .all(from) as Array<{ currency: string; opening_balance: number; delta: number }>
+
+    const displayScale = minorUnitScale(displayCurrency)
+    let total = 0
+    for (const row of rows) {
+      const rate = rateOf(row.currency)
+      if (rate === null) continue
+      const balance = row.opening_balance + row.delta
+      total += Math.round((balance / minorUnitScale(row.currency)) * rate * displayScale)
+    }
+    return total
   }
 }

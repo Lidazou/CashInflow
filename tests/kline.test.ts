@@ -407,18 +407,244 @@ describe('candle wicks', () => {
     expect(september.balanceHigh).toBe(100000)
   })
 
-  it('collapses high, low and close onto the day itself at day granularity', () => {
+  it('gives a single day a real wick from its own transactions', () => {
     const id = account('招商银行', 'CNY', 0)
     record(id, 'income', '2026-09-01', 100)
     record(id, 'expense', '2026-09-01', 30)
 
     const [day] = services.kline.series('CNY', 'day').points
 
-    // A day is the finest bucket there is, so its wick has nowhere to go.
-    expect(day.balanceHigh).toBe(7000)
-    expect(day.balanceLow).toBe(7000)
-    expect(day.balanceClose).toBe(7000)
+    // The day started at nothing, peaked at ¥100 the moment the income landed, and
+    // closed at ¥70 — so the wick spans the whole range the balance travelled.
+    //
+    // This used to assert high === low === close, on the reasoning that a day is the
+    // finest bucket and therefore has no internal structure. Per-transaction markers
+    // gave it one: the balance genuinely reached ¥100 even though it never ended a day
+    // there, and a candle that hides that is hiding the salary.
     expect(day.balanceOpen).toBe(0)
+    expect(day.balanceHigh).toBe(10000)
+    expect(day.balanceLow).toBe(0)
+    expect(day.balanceClose).toBe(7000)
+  })
+
+  it('positions each transaction on the balance curve, in order', () => {
+    const id = account('招商银行', 'CNY', 100000)
+    record(id, 'expense', '2026-09-15', 800)
+    record(id, 'income', '2026-09-15', 800)
+    record(id, 'expense', '2026-09-15', 50)
+
+    const [day] = services.kline.series('CNY', 'day').points
+
+    // 100000 → 20000 → 100000 → 95000, so the markers sit at exactly those balances.
+    expect(day.markers).toHaveLength(3)
+    expect(day.markers.map((marker) => marker.balanceAfter)).toEqual([20000, 100000, 95000])
+    expect(day.markers.map((marker) => marker.balanceBefore)).toEqual([100000, 20000, 100000])
+    // The extremes follow from the markers, not from open and close.
+    expect(day.balanceLow).toBe(20000)
+    expect(day.balanceHigh).toBe(100000)
+  })
+
+  it('reports the net change as a ratio of the bucket opening balance', () => {
+    // `account()` takes MINOR units like the rest of the fixtures: 100000 fen = ¥1,000.
+    const id = account('招商银行', 'CNY', 100000)
+    record(id, 'income', '2026-09-15', 500)
+
+    const [day] = services.kline.series('CNY', 'day').points
+    expect(day.balanceOpen).toBe(100000)
+    expect(day.balanceClose).toBe(150000)
+    // ¥500 on top of ¥1,000 is +50%, and the denominator is where THIS bucket
+    // started rather than the balance years ago.
+    expect(day.changeRatio).toBeCloseTo(0.5, 10)
+  })
+
+  it('leaves the change ratio null when there was nothing to grow from', () => {
+    const id = account('招商银行', 'CNY', 0)
+    record(id, 'income', '2026-09-15', 500)
+
+    // "Up 100% from nothing" is not a percentage anyone can act on, so it is not
+    // reported as one.
+    const [day] = services.kline.series('CNY', 'day').points
+    expect(day.changeRatio).toBeNull()
+  })
+})
+
+/**
+ * The OHLC definition, asserted case by case.
+ *
+ * These are the eleven scenarios the v1.5 specification names, written against the
+ * exact numbers it gives. Several overlap with the tests above — a candle that
+ * detects a spike is also "income only" — and that is deliberate: those tests exist
+ * to prove the mechanism works over a real series, these exist so that the
+ * DEFINITION itself is pinned somewhere a reader can compare it against the spec
+ * line by line. When they disagree, one of the two has changed meaning.
+ */
+describe('OHLC, case by case', () => {
+  it('Test 1 — income only: 5000 +3000', () => {
+    const id = account('招商银行', 'CNY', 500000)
+    record(id, 'income', '2026-09-26', 3000, { time: '09:00' })
+
+    const [day] = services.kline.series('CNY', 'day').points
+    expect(day.balanceOpen).toBe(500000)
+    expect(day.balanceHigh).toBe(800000)
+    expect(day.balanceLow).toBe(500000)
+    expect(day.balanceClose).toBe(800000)
+  })
+
+  it('Test 2 — expense only: 5000 −500', () => {
+    const id = account('招商银行', 'CNY', 500000)
+    record(id, 'expense', '2026-09-26', 500, { time: '12:00' })
+
+    const [day] = services.kline.series('CNY', 'day').points
+    expect(day.balanceOpen).toBe(500000)
+    expect(day.balanceHigh).toBe(500000)
+    expect(day.balanceLow).toBe(450000)
+    expect(day.balanceClose).toBe(450000)
+  })
+
+  it('Test 3 — income then spending: 5000 → 8000 → 7390', () => {
+    const id = account('招商银行', 'CNY', 500000)
+    record(id, 'income', '2026-09-26', 3000, { time: '09:00' })
+    record(id, 'expense', '2026-09-26', 610, { time: '20:00' })
+
+    const [day] = services.kline.series('CNY', 'day').points
+    // The peak the specification asks for: the salary peak, not the close.
+    expect(day.balanceHigh).toBe(800000)
+    expect(day.balanceLow).toBe(500000)
+    expect(day.balanceClose).toBe(739000)
+  })
+
+  it('Test 4 — spending then income: 5000 → 4500 → 7000', () => {
+    const id = account('招商银行', 'CNY', 500000)
+    record(id, 'expense', '2026-09-26', 500, { time: '09:00' })
+    record(id, 'income', '2026-09-26', 2500, { time: '18:00' })
+
+    const [day] = services.kline.series('CNY', 'day').points
+    // The mirror of Test 3: the LOW is the dip before the income arrived, and the
+    // close sits below the high. Ordering by time is what decides which.
+    expect(day.balanceOpen).toBe(500000)
+    expect(day.balanceHigh).toBe(700000)
+    expect(day.balanceLow).toBe(450000)
+    expect(day.balanceClose).toBe(700000)
+  })
+
+  it('Test 5 — a day with no transactions is flat on the carried balance', () => {
+    const id = account('招商银行', 'CNY', 500000)
+    record(id, 'income', '2026-09-01', 100)
+    record(id, 'income', '2026-09-03', 100)
+
+    const series = services.kline.series('CNY', 'day')
+    const quiet = series.daily.find((day) => day.date === '2026-09-02')
+
+    expect(quiet).toBeDefined()
+    expect(quiet!.balanceOpen).toBe(quiet!.balanceHigh)
+    expect(quiet!.balanceHigh).toBe(quiet!.balanceLow)
+    expect(quiet!.balanceLow).toBe(quiet!.balanceClose)
+    expect(quiet!.transactionCount).toBe(0)
+    expect(quiet!.income).toBe(0)
+    expect(quiet!.expense).toBe(0)
+  })
+
+  it('Test 6 — a same-currency transfer leaves the total balance untouched', () => {
+    const from = account('Maybank', 'CNY', 500000)
+    const to = account('现金', 'CNY', 0)
+
+    services.transactions.createTransfer({ fromAccountId: from, toAccountId: to, amount: 50000, date: '2026-09-26' })
+
+    const [day] = services.kline.series('CNY', 'day').points
+    expect(day.balanceOpen).toBe(500000)
+    expect(day.balanceClose).toBe(500000)
+    expect(day.balanceHigh).toBe(500000)
+    expect(day.balanceLow).toBe(500000)
+    // Moving your own money is not earning or spending it.
+    expect(day.income).toBe(0)
+    expect(day.expense).toBe(0)
+    // The legs are still present as markers, because they really did move balances.
+    expect(day.markers).toHaveLength(2)
+    expect(day.markers.every((marker) => marker.type === 'transfer')).toBe(true)
+  })
+
+  it('Test 7 — a transaction with no time is not given one', () => {
+    const id = account('招商银行', 'CNY', 500000)
+    // No `time` passed: this is what a bank CSV without a time column produces.
+    record(id, 'expense', '2026-09-26', 80)
+
+    const [day] = services.kline.series('CNY', 'day').points
+    expect(day.markers[0].time).toBeNull()
+    // And the tooltip payload agrees — one answer, not two.
+    expect(day.transactions[0].time).toBeNull()
+  })
+
+  it('Test 8 — keeps the original amount and adds the converted one', () => {
+    withRates(RATES)
+    const myr = account('Maybank', 'MYR', 0)
+    record(myr, 'expense', '2026-09-26', 100, { currency: 'MYR' })
+
+    const [day] = services.kline.series('CNY', 'day').points
+
+    // The ledger's own number survives untouched...
+    expect(day.transactions[0].amount).toBe(10000)
+    expect(day.transactions[0].currency).toBe('MYR')
+    // ...and the converted figure is a separate field, not an overwrite.
+    const expected = Math.round((10000 / 100 / RATES.rates.MYR) * 100)
+    expect(day.transactions[0].convertedAmount).toBe(expected)
+    expect(day.markers[0].amount).toBe(10000)
+    expect(day.markers[0].currency).toBe('MYR')
+    expect(day.expense).toBe(expected)
+  })
+
+  it('Test 10 — a weekly candle takes the first open, last close and the extremes', () => {
+    const id = account('招商银行', 'CNY', 500000)
+    // Mon 2026-09-14 .. Sun 2026-09-20 is one week.
+    record(id, 'income', '2026-09-14', 3000, { time: '09:00' })
+    record(id, 'expense', '2026-09-16', 500, { time: '12:00' })
+    record(id, 'expense', '2026-09-18', 300, { time: '12:00' })
+
+    const week = services.kline.series('CNY', 'week').points.find((point) => point.date === '2026-09-14')
+    expect(week).toBeDefined()
+
+    const days = services.kline
+      .series('CNY', 'day')
+      .daily.filter((day) => day.date >= '2026-09-14' && day.date <= '2026-09-20')
+
+    expect(week!.balanceOpen).toBe(days[0].balanceOpen)
+    expect(week!.balanceClose).toBe(days[days.length - 1].balanceClose)
+    expect(week!.balanceHigh).toBe(Math.max(...days.map((day) => day.balanceHigh)))
+    expect(week!.balanceLow).toBe(Math.min(...days.map((day) => day.balanceLow)))
+  })
+
+  it('Test 11 — a monthly candle takes the first open, last close and the extremes', () => {
+    const id = account('招商银行', 'CNY', 500000)
+    record(id, 'income', '2026-09-03', 3000, { time: '09:00' })
+    record(id, 'expense', '2026-09-20', 900, { time: '12:00' })
+
+    const month = services.kline.series('CNY', 'month').points.find((point) => point.date === '2026-09-01')
+    expect(month).toBeDefined()
+
+    const days = services.kline
+      .series('CNY', 'day')
+      .daily.filter((day) => day.date >= '2026-09-01' && day.date <= '2026-09-30')
+
+    expect(month!.balanceOpen).toBe(days[0].balanceOpen)
+    expect(month!.balanceClose).toBe(days[days.length - 1].balanceClose)
+    expect(month!.balanceHigh).toBe(Math.max(...days.map((day) => day.balanceHigh)))
+    expect(month!.balanceLow).toBe(Math.min(...days.map((day) => day.balanceLow)))
+  })
+
+  it('gives every moving-money entry a marker even when the tooltip list is capped', () => {
+    const id = account('招商银行', 'CNY', 500000)
+    // Comfortably past KLINE_MAX_TRANSACTIONS_PER_BUCKET.
+    for (let i = 0; i < 240; i += 1) {
+      record(id, 'expense', '2026-09-26', 1, { time: `0${(i % 9) + 1}:00` })
+    }
+
+    const [day] = services.kline.series('CNY', 'day').points
+
+    // The tooltip list is capped so a busy day cannot flood the IPC bridge.
+    expect(day.transactions.length).toBeLessThan(240)
+    // Markers are NOT: dropping one would misplace every later marker that day.
+    expect(day.markers).toHaveLength(240)
+    // And the count stays truthful about what was truncated.
+    expect(day.transactionCount).toBe(240)
   })
 })
 

@@ -155,6 +155,105 @@ input[type='date'] {
 .text-expense { color: var(--expense); }
 .text-neutral { color: var(--neutral); }
 
+/* ---- money presentation ----
+   RESTORED, not new. These rules lived in the original global.css and were dropped
+   when the v1.4 design language was written — which silently broke the dashboard's
+   exchange-rate area: with no `.rate-ticker__list` rule the list fell back to block
+   layout and each pair stacked vertically instead of sitting on one row. A missing
+   rule does not look like a bug in the stylesheet; it looks like a design choice. */
+
+/* The original amount next to a converted one. Smaller and quieter than the figure
+   it qualifies, because the converted number is the one being read. */
+.money-original { color: var(--text-tertiary); font-size: 0.9em; }
+
+.currency-switcher { display: inline-flex; align-items: center; min-width: 0; }
+.currency-switcher__select { width: auto; }
+
+/*
+  Live-rate ticker.
+
+  ONE ROW, scrolling horizontally if it must. The rates are a read-out, not a list to
+  be browsed: wrapping them onto three lines pushed the whole dashboard down and broke
+  the line into something the eye has to re-find each time. `overflow-x: auto` keeps
+  every pair reachable on a narrow window without the bar growing taller.
+*/
+.rate-ticker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.rate-ticker__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+}
+.rate-ticker__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background-color: var(--neutral);
+  flex: 0 0 6px;
+}
+/* Freshness is carried by the dot's colour: a rate without its age invites the user
+   to trust a stale number. */
+.rate-ticker__status.is-live .rate-ticker__dot { background-color: var(--income); }
+.rate-ticker__status.is-recent .rate-ticker__dot { background-color: var(--income); }
+.rate-ticker__status.is-stale .rate-ticker__dot { background-color: var(--warning); }
+.rate-ticker__status.is-old .rate-ticker__dot { background-color: var(--expense); }
+.rate-ticker__status.is-missing .rate-ticker__dot { background-color: var(--expense); }
+
+.rate-ticker__list {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.rate-ticker__list::-webkit-scrollbar { display: none; }
+.rate-ticker__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.rate-ticker__pair { color: var(--text-tertiary); }
+.rate-ticker__value { color: var(--text-primary); font-weight: var(--weight-medium); }
+.rate-ticker__empty { color: var(--text-tertiary); white-space: nowrap; }
+.rate-ticker__refresh {
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  height: 22px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  transition: var(--transition-base);
+}
+.rate-ticker__refresh:hover:not(:disabled) { background-color: var(--bg-hover); color: var(--text-primary); }
+.rate-ticker__refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+.rate-ticker.is-compact { gap: var(--space-2); font-size: var(--text-2xs); }
+
+/* Explanation under a converted figure. */
+.conversion-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+.conversion-note__warn { color: var(--warning); }
+
 /* ---- buttons ----
    The primary button is a NEAR-WHITE fill on dark and a purple fill on light,
    which is the exchange convention: the single most important action on screen

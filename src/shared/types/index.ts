@@ -695,6 +695,51 @@ export interface KlineBucket {
 }
 
 /** A candle plus everything the tooltip needs to explain it. */
+/**
+ * One transaction, positioned on the balance curve.
+ *
+ * THIS IS WHAT MAKES THE CHART CASHFLOW-SPECIFIC RATHER THAN A STOCK CHART
+ * -----------------------------------------------------------------------
+ * A stock candle says "the price moved this much". It cannot say why, because a
+ * price has no entries. A balance does: every transaction is a labelled event that
+ * moves it, so each one gets a marker at the exact balance it produced.
+ *
+ * `balanceBefore` and `balanceAfter` are in the DISPLAY currency's minor units and
+ * are computed from the running balance, one transaction at a time, in ledger order
+ * (date, then time, then id). Drawing a marker at `balanceAfter` is therefore a
+ * statement about where the money actually was after that transaction — not an even
+ * division of the candle. The gap between consecutive markers IS that transaction's
+ * size, which is how a ¥3,000 salary and a ¥30 lunch are distinguishable inside one
+ * body.
+ *
+ * Both are nullable because a currency can lack a rate: an unconvertible
+ * transaction cannot be placed on a converted axis, and inventing a position for it
+ * would put a marker somewhere the money never was.
+ */
+export interface CashflowTransactionMarker {
+  transactionId: number
+  /** 'HH:MM', or null when the source data had no time. Never a fabricated 00:00. */
+  time: string | null
+  /**
+   * `transfer` is included because a transfer leg moves the balance of the account
+   * it touches even though it is excluded from income/expense totals. It is drawn
+   * as a marker but never as a cashflow bar.
+   */
+  type: 'income' | 'expense' | 'transfer'
+  /** Positive magnitude in the ledger's own currency, minor units. */
+  amount: number
+  currency: string
+  /** Signed effect on the balance, in the display currency. Null when no rate. */
+  convertedDelta: number | null
+  balanceBefore: number | null
+  balanceAfter: number | null
+  merchant: string | null
+  categoryName: string | null
+  categoryColor: string | null
+  accountName: string
+  note: string | null
+}
+
 export interface KlinePoint extends KlineBucket {
   /**
    * Running mean of balanceClose over N buckets, or null while fewer than N
@@ -711,6 +756,26 @@ export interface KlinePoint extends KlineBucket {
   sources: Array<{ currency: string; income: number; expense: number; net: number }>
   /** The individual transactions inside this bucket, for the tooltip's breakdown. */
   transactions: KlineTransaction[]
+  /**
+   * Every balance-moving entry in this bucket, in ledger order, each positioned on
+   * the balance curve. This is what the candle's interior ticks are drawn from.
+   *
+   * Distinct from `transactions` above, and deliberately so:
+   *   - `transactions` is the TOOLTIP payload: income and expense only, because a
+   *     list of what you earned and spent should not include moving your own money
+   *     between accounts, and it is capped so a busy month cannot flood the bridge.
+   *   - `markers` is the GEOMETRY payload: it includes transfers, because a transfer
+   *     leg really does move the balance of the account it touches, and it is not
+   *     capped, because omitting one would place every later marker on that day at
+   *     the wrong height.
+   */
+  markers: CashflowTransactionMarker[]
+  /**
+   * Net change as a fraction of the opening balance, for the header's percentage.
+   * Null when the opening balance is zero, because "up 100% from nothing" is not a
+   * percentage anyone can act on.
+   */
+  changeRatio: number | null
 }
 
 /**
@@ -751,6 +816,10 @@ export interface KlineTransaction {
  * candle and a query-time day candle are then literally the same thing, which is
  * what makes the "summing dailies equals the buckets" invariant checkable instead
  * of merely asserted.
+ *
+ * `transactions` and `markers` are empty on these rows by design — the per-entry
+ * payloads live on `points` only, so that the always-shipped daily spine stays
+ * small.
  */
 export type KlineDaily = KlineBucket
 
